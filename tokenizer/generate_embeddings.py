@@ -62,7 +62,7 @@ for item_id, description in item_descriptions.items():
 
 # Batch processing parameters
 batch_size = 32
-max_length = 8192
+max_length = 30000
 all_embeddings = []
 
 # Process in batches with progress bar
@@ -84,10 +84,7 @@ with torch.no_grad():
         outputs = model(**batch_dict)
         embeddings = last_token_pool(outputs.last_hidden_state, batch_dict['attention_mask'])
 
-        # Normalize embeddings
-        embeddings = F.normalize(embeddings, p=2, dim=1)
-
-        # Move to CPU and convert to list
+        # Move to CPU and convert to list (使用原始embedding值，不归一化)
         embeddings_cpu = embeddings.cpu().float().numpy()
         all_embeddings.extend(embeddings_cpu)
 

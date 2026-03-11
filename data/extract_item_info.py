@@ -26,6 +26,9 @@ stats = {
     'title_missing': 0,
     'categories_missing': 0,
     'imUrl_missing': 0,
+    'brand_missing': 0,
+    'price_missing': 0,
+    'description_missing': 0,
     'all_present': 0
 }
 
@@ -39,10 +42,13 @@ with open(meta_file, 'r', encoding='utf-8') as f:
             mapped_id = asin_to_id[asin]
             stats['total'] += 1
 
-            # Extract only title, categories, imUrl
+            # Extract all fields
             title = meta.get('title', '')
             categories = meta.get('categories', [])
             imUrl = meta.get('imUrl', '')
+            brand = meta.get('brand', '')
+            price = meta.get('price', '')
+            description = meta.get('description', '')
 
             # Track missing fields
             if not title:
@@ -51,14 +57,23 @@ with open(meta_file, 'r', encoding='utf-8') as f:
                 stats['categories_missing'] += 1
             if not imUrl:
                 stats['imUrl_missing'] += 1
-            if title and categories and imUrl:
+            if not brand:
+                stats['brand_missing'] += 1
+            if not price:
+                stats['price_missing'] += 1
+            if not description:
+                stats['description_missing'] += 1
+            if title and categories and imUrl and brand and price and description:
                 stats['all_present'] += 1
 
             # Store with mapped ID as key
             item_info[str(mapped_id)] = {
                 'title': title,
                 'categories': categories,
-                'imUrl': imUrl
+                'imUrl': imUrl,
+                'brand': brand,
+                'price': price,
+                'description': description
             }
 
 print(f"Processed {stats['total']} items from meta data")
@@ -78,5 +93,8 @@ print(f"Total items: {stats['total']}")
 print(f"\nTitle missing: {stats['title_missing']} ({stats['title_missing']/stats['total']*100:.2f}%)")
 print(f"Categories missing: {stats['categories_missing']} ({stats['categories_missing']/stats['total']*100:.2f}%)")
 print(f"ImUrl missing: {stats['imUrl_missing']} ({stats['imUrl_missing']/stats['total']*100:.2f}%)")
+print(f"Brand missing: {stats['brand_missing']} ({stats['brand_missing']/stats['total']*100:.2f}%)")
+print(f"Price missing: {stats['price_missing']} ({stats['price_missing']/stats['total']*100:.2f}%)")
+print(f"Description missing: {stats['description_missing']} ({stats['description_missing']/stats['total']*100:.2f}%)")
 print(f"\nAll fields present: {stats['all_present']} ({stats['all_present']/stats['total']*100:.2f}%)")
 print("="*60)
