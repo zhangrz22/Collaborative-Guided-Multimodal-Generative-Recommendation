@@ -115,7 +115,7 @@ def analyze_collision(df):
 def main():
     parser = argparse.ArgumentParser(description='分析RQ-KMEANS编码的冲突率')
     parser.add_argument('--input_file',
-                        default='/llm-reco-ssd-share/zhangrongzhou/Graduation_project/data/item_codes.parquet',
+                        default='/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/item_codes.parquet',
                         help='输入的code parquet文件路径')
 
     args = parser.parse_args()

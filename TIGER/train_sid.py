@@ -1,7 +1,8 @@
 import argparse
+import json
 import os
 import random
-from typing import Optional
+from typing import Optional, Dict, List
 
 import numpy as np
 import torch
@@ -41,13 +42,22 @@ class TIGER(nn.Module):
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
         return outputs.loss, outputs.logits
 
-    def generate(self, input_ids: torch.Tensor, attention_mask: Optional[torch.Tensor] = None, num_beams: int = 20):
+    def generate(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        num_beams: int = 20,
+        prefix_allowed_tokens_fn=None,
+    ):
         return self.model.generate(
             input_ids=input_ids,
             attention_mask=attention_mask,
             max_length=5,  # decoder_start_token + 4 SID tokens
+            min_length=5,
             num_beams=num_beams,
             num_return_sequences=num_beams,
+            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+            early_stopping=True,
         )
 
 
@@ -72,15 +82,62 @@ def calculate_pos_index(preds, labels, maxk=20):
 
 
 def recall_at_k(pos_index, k):
-    return pos_index[:, :k].sum(dim=1).float().mean().item()
+    return pos_index[:, :k].any(dim=1).float()
 
 
 def ndcg_at_k(pos_index, k):
-    ranks = torch.arange(1, pos_index.shape[-1] + 1)
-    dcg = 1.0 / torch.log2(ranks + 1)
-    dcg = dcg.unsqueeze(0).expand_as(pos_index.float())
-    dcg = torch.where(pos_index, dcg, torch.tensor(0.0))
-    return dcg[:, :k].sum(dim=1).float().mean().item()
+    ranks = torch.arange(1, pos_index.shape[-1] + 1, dtype=torch.float32)
+    discounts = (1.0 / torch.log2(ranks + 1.0)).unsqueeze(0).expand_as(pos_index.float())
+    dcg = torch.where(pos_index, discounts, torch.zeros_like(discounts))
+    return dcg[:, :k].sum(dim=1).float()
+
+
+def build_sid_trie(index_path: str, tokenizer) -> Dict:
+    with open(index_path, "r", encoding="utf-8") as f:
+        indices = json.load(f)
+
+    trie: Dict = {}
+    layer_token_sets: List[set] = [set(), set(), set(), set()]
+    for _, sid_tokens in indices.items():
+        sid_ids = [tokenizer.convert_tokens_to_ids(tok) for tok in sid_tokens]
+        if len(sid_ids) != 4:
+            continue
+        node = trie
+        for i, tid in enumerate(sid_ids):
+            tid = int(tid)
+            layer_token_sets[i].add(tid)
+            node = node.setdefault(tid, {})
+    return {
+        "trie": trie,
+        "layer_token_lists": [sorted(list(s)) for s in layer_token_sets],
+    }
+
+
+def make_prefix_allowed_tokens_fn(trie_pack, decoder_start_token_id: int):
+    trie = trie_pack["trie"]
+    layer_token_lists = trie_pack["layer_token_lists"]
+
+    def _fn(batch_id, input_ids):
+        seq = input_ids.tolist()
+        if not seq:
+            return layer_token_lists[0]
+
+        sid_prefix = seq[1:] if seq[0] == decoder_start_token_id else seq
+        plen = len(sid_prefix)
+        if plen <= 0:
+            return layer_token_lists[0]
+        if plen >= 4:
+            return [decoder_start_token_id]
+
+        node = trie
+        for tid in sid_prefix:
+            if tid not in node:
+                return layer_token_lists[plen]
+            node = node[tid]
+        allowed = list(node.keys())
+        return allowed if allowed else layer_token_lists[plen]
+
+    return _fn
 
 
 def train_one_epoch(model, loader, optimizer, device, local_rank):
@@ -101,10 +158,11 @@ def train_one_epoch(model, loader, optimizer, device, local_rank):
 
 
 @torch.no_grad()
-def evaluate(model, loader, topk_list, beam_size, device, local_rank):
+def evaluate(model, loader, topk_list, beam_size, device, local_rank, prefix_allowed_tokens_fn):
     model.eval()
-    recalls = {f"Recall@{k}": [] for k in topk_list}
-    ndcgs = {f"NDCG@{k}": [] for k in topk_list}
+    recalls_sum = {f"Recall@{k}": 0.0 for k in topk_list}
+    ndcgs_sum = {f"NDCG@{k}": 0.0 for k in topk_list}
+    total_samples = 0
 
     iterator = tqdm(loader, desc="Eval", disable=(local_rank != 0))
     for batch in iterator:
@@ -112,17 +170,30 @@ def evaluate(model, loader, topk_list, beam_size, device, local_rank):
         attention_mask = batch["attention_mask"].to(device, non_blocking=True)
         labels = batch["target"].to(device, non_blocking=True)
 
-        preds = model.generate(input_ids=input_ids, attention_mask=attention_mask, num_beams=beam_size)
+        preds = model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            num_beams=beam_size,
+            prefix_allowed_tokens_fn=prefix_allowed_tokens_fn,
+        )
         preds = preds[:, 1:]  # strip decoder start token
         preds = preds.reshape(input_ids.shape[0], beam_size, -1)
         pos_index = calculate_pos_index(preds, labels, maxk=beam_size)
+        bs = input_ids.shape[0]
+        total_samples += bs
 
         for k in topk_list:
-            recalls[f"Recall@{k}"].append(recall_at_k(pos_index, k))
-            ndcgs[f"NDCG@{k}"].append(ndcg_at_k(pos_index, k))
+            kk = min(k, beam_size)
+            recalls_sum[f"Recall@{k}"] += recall_at_k(pos_index, kk).sum().item()
+            ndcgs_sum[f"NDCG@{k}"] += ndcg_at_k(pos_index, kk).sum().item()
 
-    avg_recalls = {k: float(np.mean(v)) for k, v in recalls.items()}
-    avg_ndcgs = {k: float(np.mean(v)) for k, v in ndcgs.items()}
+    if total_samples == 0:
+        avg_recalls = {k: 0.0 for k in recalls_sum.keys()}
+        avg_ndcgs = {k: 0.0 for k in ndcgs_sum.keys()}
+        return avg_recalls, avg_ndcgs
+
+    avg_recalls = {k: v / total_samples for k, v in recalls_sum.items()}
+    avg_ndcgs = {k: v / total_samples for k, v in ndcgs_sum.items()}
     return avg_recalls, avg_ndcgs
 
 
@@ -199,6 +270,13 @@ def main():
     base_cfg.vocab_size = len(tokenizer)
     base_cfg.pad_token_id = tokenizer.pad_token_id
     base_cfg.eos_token_id = tokenizer.eos_token_id
+    base_cfg.decoder_start_token_id = tokenizer.pad_token_id
+
+    trie_pack = build_sid_trie(index_path, tokenizer)
+    prefix_allowed_tokens_fn = make_prefix_allowed_tokens_fn(
+        trie_pack,
+        decoder_start_token_id=base_cfg.decoder_start_token_id,
+    )
 
     if args.load_pretrained.lower() == "true":
         pretrained = T5ForConditionalGeneration.from_pretrained(args.base_model)
@@ -265,7 +343,13 @@ def main():
         if (epoch + 1) % args.eval_interval == 0 and local_rank == 0:
             eval_model = model.module if ddp else model
             val_recalls, val_ndcgs = evaluate(
-                eval_model, valid_loader, args.topk_list, args.beam_size, device, local_rank
+                eval_model,
+                valid_loader,
+                args.topk_list,
+                args.beam_size,
+                device,
+                local_rank,
+                prefix_allowed_tokens_fn,
             )
             print(f"Valid Recall: {val_recalls}")
             print(f"Valid NDCG: {val_ndcgs}")
@@ -298,7 +382,13 @@ def main():
         ckpt = torch.load(save_path, map_location=device)
         eval_model.load_state_dict(ckpt)
         test_recalls, test_ndcgs = evaluate(
-            eval_model, test_loader, args.topk_list, args.beam_size, device, local_rank
+            eval_model,
+            test_loader,
+            args.topk_list,
+            args.beam_size,
+            device,
+            local_rank,
+            prefix_allowed_tokens_fn,
         )
         print(f"Test Recall: {test_recalls}")
         print(f"Test NDCG: {test_ndcgs}")
