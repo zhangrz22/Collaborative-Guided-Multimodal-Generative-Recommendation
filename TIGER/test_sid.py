@@ -171,10 +171,10 @@ def main():
     parser.add_argument("--d_kv", type=int, default=64)
     parser.add_argument("--dropout_rate", type=float, default=0.1)
 
-    parser.add_argument("--batch_size", type=int, default=96)
+    parser.add_argument("--batch_size", type=int, default=512)
     parser.add_argument("--max_len", type=int, default=50)
-    parser.add_argument("--beam_size", type=int, default=20)
-    parser.add_argument("--topk_list", type=int, nargs="+", default=[5, 10, 20])
+    parser.add_argument("--beam_size", type=int, default=10)
+    parser.add_argument("--topk_list", type=int, nargs="+", default=[5, 10])
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--device", type=str, default="cuda:0")

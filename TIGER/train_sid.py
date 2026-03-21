@@ -215,15 +215,16 @@ def main():
     parser.add_argument("--dropout_rate", type=float, default=0.1)
 
     parser.add_argument("--batch_size", type=int, default=256)
-    parser.add_argument("--infer_size", type=int, default=96)
+    parser.add_argument("--infer_size", type=int, default=512)
     parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--early_stop", type=int, default=3)
     parser.add_argument("--eval_interval", type=int, default=10)
+    parser.add_argument("--eval_start_epoch", type=int, default=120)
     parser.add_argument("--max_len", type=int, default=50)
 
-    parser.add_argument("--beam_size", type=int, default=20)
-    parser.add_argument("--topk_list", type=int, nargs="+", default=[5, 10, 20])
+    parser.add_argument("--beam_size", type=int, default=10)
+    parser.add_argument("--topk_list", type=int, nargs="+", default=[5, 10])
 
     parser.add_argument("--output_dir", type=str, default="./ckpt")
     parser.add_argument("--seed", type=int, default=2025)
@@ -340,7 +341,12 @@ def main():
             print(f"Epoch {epoch + 1}/{args.num_epochs} loss={train_loss:.6f}")
 
         should_stop = False
-        if (epoch + 1) % args.eval_interval == 0 and local_rank == 0:
+        current_epoch = epoch + 1
+        should_eval = (
+            current_epoch >= args.eval_start_epoch
+            and (current_epoch - args.eval_start_epoch) % args.eval_interval == 0
+        )
+        if should_eval and local_rank == 0:
             eval_model = model.module if ddp else model
             val_recalls, val_ndcgs = evaluate(
                 eval_model,
