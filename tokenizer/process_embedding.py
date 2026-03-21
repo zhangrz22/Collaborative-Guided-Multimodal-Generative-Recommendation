@@ -50,7 +50,7 @@ def train_rq_kmeans(embeddings, n_layers=4, codebook_size=256, model_save_path=N
     # 初始化模型
     dim = embeddings.shape[-1]
     extra_kmeans_config = {
-        'niter': 100,
+        'niter': 50,
         'verbose': True
     }
     model = ResKmeans(

@@ -5,3 +5,4 @@ data/meta_Beauty.json
 */__pycache__/*
 */logs/*
 SASRec/train.pid
+*.log
