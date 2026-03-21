@@ -218,8 +218,8 @@ def main():
     parser.add_argument("--infer_size", type=int, default=96)
     parser.add_argument("--num_epochs", type=int, default=200)
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--early_stop", type=int, default=10)
-    parser.add_argument("--eval_interval", type=int, default=1)
+    parser.add_argument("--early_stop", type=int, default=3)
+    parser.add_argument("--eval_interval", type=int, default=10)
     parser.add_argument("--max_len", type=int, default=50)
 
     parser.add_argument("--beam_size", type=int, default=20)
