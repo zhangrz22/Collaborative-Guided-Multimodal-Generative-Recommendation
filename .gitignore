@@ -2,3 +2,6 @@
 data/reviews_Beauty_5.json
 data/meta_Beauty.json
 .DS_Store
+*/__pycache__/*
+*/logs/*
+SASRec/train.pid
