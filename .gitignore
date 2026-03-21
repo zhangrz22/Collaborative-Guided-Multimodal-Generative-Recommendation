@@ -6,3 +6,6 @@ data/meta_Beauty.json
 */logs/*
 SASRec/train.pid
 *.log
+*.pth
+*.parquet
+*.json
