@@ -8,10 +8,11 @@ Inputs:
 3) optional item_info.json
 
 Outputs under data dir:
-- merge/merge.index.json            {item_id: ["<s_a_x>", "<s_b_y>", "<s_c_z>", "<s_d_w>"]}
+- {dataset}/merge.index.json        {item_id: ["<s_a_x>", "<s_b_y>", "<s_c_z>", "<s_d_w>"]}
 - {dataset}/{dataset}.inter.json    {user_id: [item_id, item_id, ...]}
-- item_sid_map.json                 {item_id: {"code": [...], "sid_tokens": [...], "sid": "..."}}
-- optional {dataset}.pretrain.json  {item_id: {..., "sid": "<|sid_begin|>...<|sid_end|>"}}
+- {dataset}/item_sid_map.json       {item_id: {"code": [...], "sid_tokens": [...], "sid": "..."}}
+- optional {dataset}/{dataset}.pretrain.json
+                                    {item_id: {..., "sid": "<|sid_begin|>...<|sid_end|>"}}
 """
 
 import json
@@ -29,19 +30,21 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 DEFAULT_DATA_ROOT = os.path.join(PROJECT_ROOT, "data")
 DEFAULT_TIGER_DATA_DIR = os.path.join(DEFAULT_DATA_ROOT, "tiger_data")
+DEFAULT_DATASET = "Beauty"
+DEFAULT_DATASET_DIR = os.path.join(DEFAULT_TIGER_DATA_DIR, DEFAULT_DATASET)
 
 DEFAULT_CONFIG = {
     # Put/generated item_codes.parquet here by default
-    "codes_parquet": os.path.join(DEFAULT_TIGER_DATA_DIR, "item_codes.parquet"),
+    "codes_parquet": os.path.join(DEFAULT_DATASET_DIR, "item_codes.parquet"),
     # Existing user sequence file
     "interaction_txt": os.path.join(DEFAULT_DATA_ROOT, "interaction_sequences_truncated.txt"),
     # TIGER-only data output root
     "data_dir": DEFAULT_TIGER_DATA_DIR,
-    "dataset": "Beauty",
+    "dataset": DEFAULT_DATASET,
     "layer_names": "a,b,c,d",
     # Optional
     "item_info_json": os.path.join(DEFAULT_DATA_ROOT, "item_info.json"),
-    "output_pretrain_json": os.path.join(DEFAULT_TIGER_DATA_DIR, "Beauty.pretrain.json"),
+    "output_pretrain_json": None,
 }
 
 
@@ -137,9 +140,7 @@ def main():
         raise ValueError("--layer_names is empty")
 
     os.makedirs(cfg["data_dir"], exist_ok=True)
-    merge_dir = os.path.join(cfg["data_dir"], "merge")
     dataset_dir = os.path.join(cfg["data_dir"], cfg["dataset"])
-    os.makedirs(merge_dir, exist_ok=True)
     os.makedirs(dataset_dir, exist_ok=True)
 
     if not os.path.exists(cfg["codes_parquet"]):
@@ -156,15 +157,15 @@ def main():
     item_sid_map = load_item_codes(cfg["codes_parquet"], layer_names)
     print(f"Loaded item codes: {len(item_sid_map)}")
 
-    # Save merge index in TIGER-compatible format
+    # Save index in TIGER-compatible format (inside dataset dir)
     index_map = {item_id: pack["sid_tokens"] for item_id, pack in item_sid_map.items()}
-    index_path = os.path.join(merge_dir, "merge.index.json")
+    index_path = os.path.join(dataset_dir, "merge.index.json")
     with open(index_path, "w", encoding="utf-8") as f:
         json.dump(index_map, f, ensure_ascii=False, indent=2)
     print(f"Saved merge index: {index_path}")
 
     # Save rich sid map for debugging/analysis
-    sid_map_path = os.path.join(cfg["data_dir"], "item_sid_map.json")
+    sid_map_path = os.path.join(dataset_dir, "item_sid_map.json")
     with open(sid_map_path, "w", encoding="utf-8") as f:
         json.dump(item_sid_map, f, ensure_ascii=False, indent=2)
     print(f"Saved item sid map: {sid_map_path}")
@@ -179,7 +180,7 @@ def main():
     # Optional pretrain file
     if cfg["item_info_json"] and os.path.exists(cfg["item_info_json"]):
         pretrain_path = cfg["output_pretrain_json"] or os.path.join(
-            cfg["data_dir"], f"{cfg['dataset']}.pretrain.json"
+            dataset_dir, f"{cfg['dataset']}.pretrain.json"
         )
         build_pretrain_json(cfg["item_info_json"], item_sid_map, pretrain_path)
     else:

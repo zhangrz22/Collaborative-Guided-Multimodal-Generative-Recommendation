@@ -13,10 +13,10 @@ Default output folder: `data/tiger_data/`.
 Default input `item_codes.parquet`: `data/tiger_data/item_codes.parquet`.
 
 This generates:
-- `data/tiger_data/merge/merge.index.json`
+- `data/tiger_data/Beauty/merge.index.json`
 - `data/tiger_data/Beauty/Beauty.inter.json`
-- `data/tiger_data/item_sid_map.json`
-- `data/tiger_data/Beauty.pretrain.json` (optional, with new `sid`)
+- `data/tiger_data/Beauty/item_sid_map.json`
+- `data/tiger_data/Beauty/Beauty.pretrain.json` (optional, with new `sid`)
 
 ## 2) 8-GPU training
 

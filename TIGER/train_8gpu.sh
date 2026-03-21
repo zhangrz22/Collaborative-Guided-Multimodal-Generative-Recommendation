@@ -11,7 +11,7 @@ LOAD_PRETRAINED=${LOAD_PRETRAINED:-false}
 DATASET=${DATASET:-Beauty}
 DATA_PATH=${DATA_PATH:-${PROJECT_ROOT}/data/tiger_data}
 INTER_FILE=${INTER_FILE:-${DATASET}.inter.json}
-INDEX_FILE=${INDEX_FILE:-merge/merge.index.json}
+INDEX_FILE=${INDEX_FILE:-${DATASET}/merge.index.json}
 
 NUM_GPUS=${NUM_GPUS:-8}
 

@@ -133,7 +133,7 @@ def main():
     parser.add_argument("--dataset", type=str, default="Beauty")
     parser.add_argument("--data_path", type=str, required=True, help="Path containing dataset and merge/index")
     parser.add_argument("--inter_file", type=str, default=None)
-    parser.add_argument("--index_file", type=str, default="merge/merge.index.json")
+    parser.add_argument("--index_file", type=str, default=None)
 
     parser.add_argument("--num_layers", type=int, default=4)
     parser.add_argument("--num_decoder_layers", type=int, default=4)
@@ -172,6 +172,8 @@ def main():
 
     if args.inter_file is None:
         args.inter_file = f"{args.dataset}.inter.json"
+    if args.index_file is None:
+        args.index_file = f"{args.dataset}/merge.index.json"
     inter_path = os.path.join(args.data_path, args.dataset, args.inter_file)
     index_path = os.path.join(args.data_path, args.index_file)
 
@@ -308,4 +310,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
