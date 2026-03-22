@@ -93,6 +93,8 @@ class ResidualVectorQuantizer(nn.Module):
 
     @torch.no_grad()
     def _ema_update(self, layer: int, residual: torch.Tensor, indices: torch.Tensor):
+        # Keep EMA buffers in stable fp32 even when AMP casts activations to fp16/bf16.
+        residual = residual.to(self.ema_embed_avg.dtype)
         one_hot = F.one_hot(indices, self.codebook_size).type_as(residual)
         cluster_size = one_hot.sum(dim=0)
         embed_sum = one_hot.t() @ residual
