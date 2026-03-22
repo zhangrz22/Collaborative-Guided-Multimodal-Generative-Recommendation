@@ -16,9 +16,16 @@ BATCH_SIZE=${BATCH_SIZE:-512}
 LR=${LR:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-5}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
-KL_WEIGHT=${KL_WEIGHT:-1e-4}
+KL_WEIGHT=${KL_WEIGHT:-0.0}
 NUM_WORKERS=${NUM_WORKERS:-4}
 SEED=${SEED:-2025}
+EMA_DECAY=${EMA_DECAY:-0.99}
+DEAD_CODE_THRESHOLD=${DEAD_CODE_THRESHOLD:-1.0}
+KMEANS_ITERS=${KMEANS_ITERS:-25}
+USE_EMA=${USE_EMA:-true}
+RESTART_UNUSED_CODES=${RESTART_UNUSED_CODES:-true}
+KMEANS_INIT=${KMEANS_INIT:-true}
+NORMALIZE=${NORMALIZE:-true}
 
 LOG_FILE="${SCRIPT_DIR}/rq_vae_$(date +%Y%m%d_%H%M%S).log"
 mkdir -p "$(dirname "$OUTPUT_FILE")" "$(dirname "$MODEL_PATH")"
@@ -30,8 +37,10 @@ echo "  model_path=${MODEL_PATH}"
 echo "  n_layers=${N_LAYERS}, codebook_size=${CODEBOOK_SIZE}"
 echo "  hidden_dim=${HIDDEN_DIM}, latent_dim=${LATENT_DIM}"
 echo "  epochs=${EPOCHS}, batch_size=${BATCH_SIZE}, lr=${LR}"
+echo "  kl_weight=${KL_WEIGHT}, ema_decay=${EMA_DECAY}, dead_code_th=${DEAD_CODE_THRESHOLD}"
 
-nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
+CMD=(
+  python3 "${SCRIPT_DIR}/process_embedding.py"
   --input_file "${INPUT_FILE}" \
   --output_file "${OUTPUT_FILE}" \
   --model_path "${MODEL_PATH}" \
@@ -45,9 +54,20 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --weight_decay "${WEIGHT_DECAY}" \
   --commitment_weight "${COMMITMENT_WEIGHT}" \
   --kl_weight "${KL_WEIGHT}" \
+  --ema_decay "${EMA_DECAY}" \
+  --dead_code_threshold "${DEAD_CODE_THRESHOLD}" \
+  --kmeans_iters "${KMEANS_ITERS}" \
   --num_workers "${NUM_WORKERS}" \
   --seed "${SEED}" \
-  --amp > "${LOG_FILE}" 2>&1 &
+  --amp
+)
+
+if [[ "${USE_EMA}" == "true" ]]; then CMD+=(--ema); else CMD+=(--no-ema); fi
+if [[ "${RESTART_UNUSED_CODES}" == "true" ]]; then CMD+=(--restart_unused_codes); else CMD+=(--no-restart_unused_codes); fi
+if [[ "${KMEANS_INIT}" == "true" ]]; then CMD+=(--kmeans_init); else CMD+=(--no-kmeans_init); fi
+if [[ "${NORMALIZE}" == "true" ]]; then CMD+=(--normalize); else CMD+=(--no-normalize); fi
+
+nohup "${CMD[@]}" > "${LOG_FILE}" 2>&1 &
 
 PID=$!
 echo "Launched in background. PID=${PID}"

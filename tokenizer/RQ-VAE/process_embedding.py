@@ -46,8 +46,28 @@ def build_model(args, input_dim: int, device: torch.device):
         codebook_size=args.codebook_size,
         commitment_weight=args.commitment_weight,
         kl_weight=args.kl_weight,
+        ema=args.ema,
+        ema_decay=args.ema_decay,
+        restart_unused_codes=args.restart_unused_codes,
+        dead_code_threshold=args.dead_code_threshold,
     ).to(device)
     return model
+
+
+def summarize_code_usage(counts: torch.Tensor):
+    """
+    counts: [n_layers, codebook_size]
+    """
+    out = []
+    for layer in range(counts.shape[0]):
+        c = counts[layer]
+        used = int((c > 0).sum().item())
+        usage = used / float(c.shape[0])
+        probs = c.float() / max(float(c.sum().item()), 1.0)
+        nz = probs[probs > 0]
+        perplexity = torch.exp(-(nz * torch.log(nz)).sum()).item() if nz.numel() > 0 else 0.0
+        out.append((usage, perplexity, used))
+    return out
 
 
 def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
@@ -62,11 +82,22 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+    if args.kmeans_init:
+        print(f"Running residual kmeans init, iters={args.kmeans_iters} ...")
+        init_x = x.to(device, non_blocking=True)
+        with torch.no_grad():
+            mu, _ = model.encode_to_latent(init_x)
+            model.rq.init_codebooks_kmeans(mu, n_iters=args.kmeans_iters)
+        print("Kmeans init done.")
+
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda" and args.amp))
     for epoch in range(1, args.epochs + 1):
         model.train()
         stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0}
         count = 0
+        code_counts = torch.zeros(
+            (args.n_layers, args.codebook_size), dtype=torch.long, device="cpu"
+        )
 
         for (batch_x,) in tqdm(loader, desc=f"Epoch {epoch}/{args.epochs}"):
             batch_x = batch_x.to(device, non_blocking=True)
@@ -88,13 +119,26 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             stats["commit"] += out["commit_loss"].item() * bs
             stats["kl"] += out["kl_loss"].item() * bs
 
+            codes = out["codes"].detach().cpu()
+            for layer in range(codes.shape[1]):
+                binc = torch.bincount(codes[:, layer], minlength=args.codebook_size)
+                code_counts[layer] += binc
+
+        usage = summarize_code_usage(code_counts)
+        usage_str = " ".join(
+            [
+                f"L{i}:used={used}/{args.codebook_size}({u*100:.1f}%),ppl={ppl:.1f}"
+                for i, (u, ppl, used) in enumerate(usage)
+            ]
+        )
         print(
             f"[Epoch {epoch}] "
             f"loss={stats['loss']/count:.6f} "
             f"recon={stats['recon']/count:.6f} "
             f"vq={stats['vq']/count:.6f} "
             f"commit={stats['commit']/count:.6f} "
-            f"kl={stats['kl']/count:.6f}"
+            f"kl={stats['kl']/count:.6f} "
+            f"| {usage_str}"
         )
 
 
@@ -142,6 +186,12 @@ def save_checkpoint(model: RQVAE, path: str, args):
             "codebook_size": args.codebook_size,
             "commitment_weight": args.commitment_weight,
             "kl_weight": args.kl_weight,
+            "ema": args.ema,
+            "ema_decay": args.ema_decay,
+            "restart_unused_codes": args.restart_unused_codes,
+            "dead_code_threshold": args.dead_code_threshold,
+            "kmeans_init": args.kmeans_init,
+            "kmeans_iters": args.kmeans_iters,
         },
     }
     torch.save(ckpt, path)
@@ -151,7 +201,11 @@ def save_checkpoint(model: RQVAE, path: str, args):
 def load_checkpoint(model: RQVAE, path: str, device: torch.device):
     ckpt = torch.load(path, map_location=device)
     state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
-    model.load_state_dict(state_dict)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    if missing:
+        print(f"Missing keys when loading checkpoint: {len(missing)}")
+    if unexpected:
+        print(f"Unexpected keys when loading checkpoint: {len(unexpected)}")
     print(f"Loaded model: {path}")
 
 
@@ -167,7 +221,13 @@ def parse_args():
     parser.add_argument("--hidden_dim", type=int, default=1024)
     parser.add_argument("--latent_dim", type=int, default=256)
     parser.add_argument("--commitment_weight", type=float, default=0.25)
-    parser.add_argument("--kl_weight", type=float, default=1e-4)
+    parser.add_argument("--kl_weight", type=float, default=0.0)
+    parser.add_argument("--ema", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--ema_decay", type=float, default=0.99)
+    parser.add_argument("--restart_unused_codes", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--dead_code_threshold", type=float, default=1.0)
+    parser.add_argument("--kmeans_init", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--kmeans_iters", type=int, default=25)
 
     parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch_size", type=int, default=512)
@@ -176,7 +236,12 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=2025)
-    parser.add_argument("--normalize", action="store_true", help="L2-normalize embeddings before training")
+    parser.add_argument(
+        "--normalize",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="L2-normalize embeddings before training",
+    )
     return parser.parse_args()
 
 
@@ -209,4 +274,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

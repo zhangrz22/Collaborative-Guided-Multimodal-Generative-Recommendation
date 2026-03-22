@@ -4,15 +4,39 @@ import torch.nn.functional as F
 
 
 class ResidualVectorQuantizer(nn.Module):
-    def __init__(self, num_layers: int, codebook_size: int, latent_dim: int):
+    def __init__(
+        self,
+        num_layers: int,
+        codebook_size: int,
+        latent_dim: int,
+        ema: bool = True,
+        ema_decay: float = 0.99,
+        restart_unused_codes: bool = True,
+        dead_code_threshold: float = 1.0,
+    ):
         super().__init__()
         self.num_layers = num_layers
         self.codebook_size = codebook_size
         self.latent_dim = latent_dim
-        self.codebooks = nn.Parameter(
-            torch.empty(num_layers, codebook_size, latent_dim)
+        self.ema = ema
+        self.ema_decay = ema_decay
+        self.restart_unused_codes = restart_unused_codes
+        self.dead_code_threshold = dead_code_threshold
+
+        self.register_buffer(
+            "codebooks",
+            torch.empty(num_layers, codebook_size, latent_dim),
         )
         nn.init.xavier_uniform_(self.codebooks)
+
+        self.register_buffer(
+            "ema_cluster_size",
+            torch.zeros(num_layers, codebook_size),
+        )
+        self.register_buffer(
+            "ema_embed_avg",
+            self.codebooks.clone(),
+        )
 
     def _quantize_once(self, x: torch.Tensor, codebook: torch.Tensor):
         x_sq = (x ** 2).sum(dim=1, keepdim=True)
@@ -22,23 +46,100 @@ class ResidualVectorQuantizer(nn.Module):
         quantized = codebook[indices]
         return quantized, indices
 
+    @torch.no_grad()
+    def _ema_update(self, layer: int, residual: torch.Tensor, indices: torch.Tensor):
+        one_hot = F.one_hot(indices, self.codebook_size).type_as(residual)
+        cluster_size = one_hot.sum(dim=0)
+        embed_sum = one_hot.t() @ residual
+
+        self.ema_cluster_size[layer].mul_(self.ema_decay).add_(cluster_size, alpha=1.0 - self.ema_decay)
+        self.ema_embed_avg[layer].mul_(self.ema_decay).add_(embed_sum, alpha=1.0 - self.ema_decay)
+
+        if self.restart_unused_codes:
+            dead = self.ema_cluster_size[layer] < self.dead_code_threshold
+            if dead.any():
+                n_dead = int(dead.sum().item())
+                rand_idx = torch.randint(
+                    0,
+                    residual.shape[0],
+                    size=(n_dead,),
+                    device=residual.device,
+                )
+                new_embed = residual[rand_idx]
+                self.ema_embed_avg[layer, dead] = new_embed
+                self.ema_cluster_size[layer, dead] = self.dead_code_threshold
+
+        n = self.ema_cluster_size[layer].sum()
+        denom = (self.ema_cluster_size[layer] + 1e-5) / (n + self.codebook_size * 1e-5) * n
+        self.codebooks[layer] = self.ema_embed_avg[layer] / denom.unsqueeze(1)
+
+    @torch.no_grad()
+    def init_codebooks_kmeans(self, z: torch.Tensor, n_iters: int = 25):
+        """
+        KMeans init per residual layer:
+        layer0 on z, layer1 on residual after layer0 assignment, etc.
+        """
+        device = z.device
+        residual = z.clone()
+        for layer in range(self.num_layers):
+            centers = self._kmeans_torch(residual, self.codebook_size, n_iters=n_iters)
+            self.codebooks[layer].copy_(centers)
+            self.ema_embed_avg[layer].copy_(centers)
+            self.ema_cluster_size[layer].fill_(1.0)
+
+            _, idx = self._quantize_once(residual, self.codebooks[layer])
+            q = self.codebooks[layer][idx]
+            residual = residual - q
+
+    @staticmethod
+    @torch.no_grad()
+    def _kmeans_torch(x: torch.Tensor, k: int, n_iters: int = 25):
+        n = x.shape[0]
+        if n < k:
+            repeat = (k + n - 1) // n
+            x = x.repeat(repeat, 1)
+            n = x.shape[0]
+
+        perm = torch.randperm(n, device=x.device)
+        centers = x[perm[:k]].clone()
+
+        for _ in range(n_iters):
+            distances = torch.cdist(x, centers, p=2)
+            assign = distances.argmin(dim=1)
+            counts = torch.bincount(assign, minlength=k)
+            for i in range(k):
+                if counts[i] > 0:
+                    centers[i] = x[assign == i].mean(dim=0)
+                else:
+                    centers[i] = x[torch.randint(0, n, (1,), device=x.device)]
+        return centers
+
     def quantize(self, z: torch.Tensor):
         residual = z
         quantized_sum = torch.zeros_like(z)
         all_indices = []
-        all_quantized = []
+        all_layer_q = []
+        all_cum_q = []
+
         for layer in range(self.num_layers):
             q, idx = self._quantize_once(residual, self.codebooks[layer])
+
+            if self.training and self.ema:
+                self._ema_update(layer=layer, residual=residual.detach(), indices=idx.detach())
+                q = self.codebooks[layer][idx]
+
             residual = residual - q
             quantized_sum = quantized_sum + q
             all_indices.append(idx)
-            all_quantized.append(q)
+            all_layer_q.append(q)
+            all_cum_q.append(quantized_sum.clone())
+
         codes = torch.stack(all_indices, dim=1)
-        return quantized_sum, codes, all_quantized
+        return quantized_sum, codes, all_layer_q, all_cum_q
 
     @torch.no_grad()
     def encode(self, z: torch.Tensor):
-        _, codes, _ = self.quantize(z)
+        _, codes, _, _ = self.quantize(z)
         return codes
 
     def decode(self, codes: torch.Tensor):
@@ -62,7 +163,11 @@ class RQVAE(nn.Module):
         num_layers: int = 4,
         codebook_size: int = 256,
         commitment_weight: float = 0.25,
-        kl_weight: float = 1e-4,
+        kl_weight: float = 0.0,
+        ema: bool = True,
+        ema_decay: float = 0.99,
+        restart_unused_codes: bool = True,
+        dead_code_threshold: float = 1.0,
     ):
         super().__init__()
         self.input_dim = input_dim
@@ -72,6 +177,7 @@ class RQVAE(nn.Module):
         self.codebook_size = codebook_size
         self.commitment_weight = commitment_weight
         self.kl_weight = kl_weight
+        self.ema = ema
 
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -83,7 +189,13 @@ class RQVAE(nn.Module):
         self.logvar_head = nn.Linear(hidden_dim, latent_dim)
 
         self.rq = ResidualVectorQuantizer(
-            num_layers=num_layers, codebook_size=codebook_size, latent_dim=latent_dim
+            num_layers=num_layers,
+            codebook_size=codebook_size,
+            latent_dim=latent_dim,
+            ema=ema,
+            ema_decay=ema_decay,
+            restart_unused_codes=restart_unused_codes,
+            dead_code_threshold=dead_code_threshold,
         )
 
         self.decoder = nn.Sequential(
@@ -107,13 +219,20 @@ class RQVAE(nn.Module):
         mu, logvar = self.encode_to_latent(x)
         z = self.reparameterize(mu, logvar)
 
-        z_q, codes, layer_q = self.rq.quantize(z)
+        z_q, codes, layer_q, cum_q = self.rq.quantize(z)
         z_q_st = z + (z_q - z).detach()
         x_rec = self.decoder(z_q_st)
 
         recon_loss = F.mse_loss(x_rec, x)
-        codebook_loss = F.mse_loss(z_q, z.detach())
-        commit_loss = F.mse_loss(z, z_q.detach())
+
+        if self.ema:
+            codebook_loss = torch.zeros((), device=x.device)
+        else:
+            codebook_loss = F.mse_loss(z_q, z.detach())
+
+        commit_terms = [F.mse_loss(z, cq.detach()) for cq in cum_q]
+        commit_loss = sum(commit_terms) / max(len(commit_terms), 1)
+
         kl_loss = -0.5 * torch.mean(1.0 + logvar - mu.pow(2) - logvar.exp())
 
         loss = (
@@ -133,6 +252,7 @@ class RQVAE(nn.Module):
             "mu": mu,
             "z_q": z_q,
             "layer_q": layer_q,
+            "cum_q": cum_q,
         }
 
     @torch.no_grad()
