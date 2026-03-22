@@ -45,17 +45,10 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
-def calculate_pos_index(preds, labels, maxk=20):
-    preds = preds.detach().cpu()
-    labels = labels.detach().cpu()
-    pos_index = torch.zeros((preds.shape[0], maxk), dtype=torch.bool)
-    for i in range(preds.shape[0]):
-        cur_label = labels[i].tolist()
-        for j in range(maxk):
-            if preds[i, j].tolist() == cur_label:
-                pos_index[i, j] = True
-                break
-    return pos_index
+def calculate_pos_index_by_item(pred_item_ids, label_item_ids, maxk=20):
+    pred_item_ids = pred_item_ids.detach().cpu()[:, :maxk]
+    label_item_ids = label_item_ids.detach().cpu().unsqueeze(1)
+    return pred_item_ids.eq(label_item_ids)
 
 
 def recall_at_k(pos_index, k):
@@ -67,6 +60,32 @@ def ndcg_at_k(pos_index, k):
     discounts = (1.0 / torch.log2(ranks + 1.0)).unsqueeze(0).expand_as(pos_index.float())
     dcg = torch.where(pos_index, discounts, torch.zeros_like(discounts))
     return dcg[:, :k].sum(dim=1).float()
+
+
+def load_sid_to_item_map(sid_item_path: str, tokenizer) -> Dict:
+    with open(sid_item_path, "r", encoding="utf-8") as f:
+        sid_resolution = json.load(f)
+
+    sid_tuple_to_item = {}
+    for _, pack in sid_resolution.items():
+        sid_tokens = pack.get("sid_tokens")
+        canonical_item_id = pack.get("canonical_item_id")
+        if not sid_tokens or canonical_item_id is None:
+            continue
+        sid_ids = tuple(int(tokenizer.convert_tokens_to_ids(tok)) for tok in sid_tokens)
+        sid_tuple_to_item[sid_ids] = int(canonical_item_id)
+    return sid_tuple_to_item
+
+
+def decode_sid_preds_to_item_ids(preds, sid_tuple_to_item: Dict, unknown_item_id: int = -1):
+    preds = preds.detach().cpu()
+    batch_size, beam_size, _ = preds.shape
+    out = torch.full((batch_size, beam_size), unknown_item_id, dtype=torch.long)
+    for i in range(batch_size):
+        for j in range(beam_size):
+            sid_tuple = tuple(int(x) for x in preds[i, j].tolist())
+            out[i, j] = sid_tuple_to_item.get(sid_tuple, unknown_item_id)
+    return out
 
 
 def build_sid_trie(index_path: str, tokenizer) -> Dict:
@@ -117,7 +136,7 @@ def make_prefix_allowed_tokens_fn(trie_pack, decoder_start_token_id: int):
 
 
 @torch.no_grad()
-def evaluate(model, loader, topk_list, beam_size, device, prefix_allowed_tokens_fn):
+def evaluate(model, loader, topk_list, beam_size, device, prefix_allowed_tokens_fn, sid_tuple_to_item):
     model.eval()
     recalls_sum = {f"Recall@{k}": 0.0 for k in topk_list}
     ndcgs_sum = {f"NDCG@{k}": 0.0 for k in topk_list}
@@ -126,7 +145,7 @@ def evaluate(model, loader, topk_list, beam_size, device, prefix_allowed_tokens_
     for batch in tqdm(loader, desc="Eval"):
         input_ids = batch["history"].to(device, non_blocking=True)
         attention_mask = batch["attention_mask"].to(device, non_blocking=True)
-        labels = batch["target"].to(device, non_blocking=True)
+        labels_item = batch["target_item"].to(device, non_blocking=True)
 
         preds = model.generate(
             input_ids=input_ids,
@@ -136,7 +155,8 @@ def evaluate(model, loader, topk_list, beam_size, device, prefix_allowed_tokens_
         )
         preds = preds[:, 1:]
         preds = preds.reshape(input_ids.shape[0], beam_size, -1)
-        pos_index = calculate_pos_index(preds, labels, maxk=beam_size)
+        pred_item_ids = decode_sid_preds_to_item_ids(preds, sid_tuple_to_item)
+        pos_index = calculate_pos_index_by_item(pred_item_ids, labels_item, maxk=beam_size)
         bs = input_ids.shape[0]
         total_samples += bs
 
@@ -162,6 +182,7 @@ def main():
     parser.add_argument("--data_path", type=str, required=True)
     parser.add_argument("--inter_file", type=str, default=None)
     parser.add_argument("--index_file", type=str, default=None)
+    parser.add_argument("--sid_item_file", type=str, default=None)
 
     parser.add_argument("--num_layers", type=int, default=4)
     parser.add_argument("--num_decoder_layers", type=int, default=4)
@@ -187,10 +208,20 @@ def main():
         args.inter_file = f"{args.dataset}.inter.json"
     if args.index_file is None:
         args.index_file = f"{args.dataset}/merge.index.json"
+    if args.sid_item_file is None:
+        args.sid_item_file = f"{args.dataset}/sid_item_resolution.json"
     inter_path = os.path.join(args.data_path, args.dataset, args.inter_file)
     index_path = os.path.join(args.data_path, args.index_file)
+    sid_item_path = os.path.join(args.data_path, args.sid_item_file)
 
     tokenizer = create_sid_tokenizer(args.base_model, index_path)
+    if not os.path.exists(sid_item_path):
+        raise FileNotFoundError(
+            f"SID resolution file not found: {sid_item_path}. "
+            "Please run tokenizer/build_sid_data.py to generate it."
+        )
+    sid_tuple_to_item = load_sid_to_item_map(sid_item_path, tokenizer)
+    print(f"Loaded SID decode map: {len(sid_tuple_to_item)} SID -> canonical item")
 
     cfg = T5Config.from_pretrained(args.base_model)
     cfg.num_layers = args.num_layers
@@ -225,7 +256,13 @@ def main():
     )
 
     recalls, ndcgs = evaluate(
-        model, test_loader, args.topk_list, args.beam_size, device, prefix_allowed_tokens_fn
+        model,
+        test_loader,
+        args.topk_list,
+        args.beam_size,
+        device,
+        prefix_allowed_tokens_fn,
+        sid_tuple_to_item,
     )
     print("Test Recall:", recalls)
     print("Test NDCG:", ndcgs)

@@ -5,14 +5,17 @@ from torch.utils.data import DataLoader
 def sid_collate_fn(batch, pad_token_id=0):
     histories = [item["history"] for item in batch]
     targets = [item["target"] for item in batch]
+    target_items = [item["target_item"] for item in batch]
 
     history_tensor = torch.tensor(histories, dtype=torch.long)
     target_tensor = torch.tensor(targets, dtype=torch.long)
+    target_item_tensor = torch.tensor(target_items, dtype=torch.long)
     attention_mask = (history_tensor != pad_token_id).long()
 
     return {
         "history": history_tensor,
         "target": target_tensor,
+        "target_item": target_item_tensor,
         "attention_mask": attention_mask,
     }
 
@@ -30,4 +33,3 @@ def build_sid_dataloader(dataset, batch_size, shuffle, num_workers, pad_token_id
         pin_memory=True,
         drop_last=False,
     )
-

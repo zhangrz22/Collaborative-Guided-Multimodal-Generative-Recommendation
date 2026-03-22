@@ -66,6 +66,7 @@ class SIDDataset(Dataset):
                         {
                             "history": self._process_history(history_items),
                             "target": self._item_to_token_ids(target_item),
+                            "target_item": int(target_item),
                         }
                     )
             elif self.mode == "valid":
@@ -77,6 +78,7 @@ class SIDDataset(Dataset):
                     {
                         "history": self._process_history(history_items),
                         "target": self._item_to_token_ids(target_item),
+                        "target_item": int(target_item),
                     }
                 )
             elif self.mode == "test":
@@ -88,6 +90,7 @@ class SIDDataset(Dataset):
                     {
                         "history": self._process_history(history_items),
                         "target": self._item_to_token_ids(target_item),
+                        "target_item": int(target_item),
                     }
                 )
             else:
@@ -116,4 +119,3 @@ def create_sid_tokenizer(base_model_path, index_path):
     print(f"Added {num_added} SID tokens to tokenizer.")
     print(f"Tokenizer vocab size: {len(tokenizer)}")
     return tokenizer
-

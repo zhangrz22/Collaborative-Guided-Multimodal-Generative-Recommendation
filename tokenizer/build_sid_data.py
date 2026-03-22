@@ -11,12 +11,16 @@ Outputs under data dir:
 - {dataset}/merge.index.json        {item_id: ["<s_a_x>", "<s_b_y>", "<s_c_z>", "<s_d_w>"]}
 - {dataset}/{dataset}.inter.json    {user_id: [item_id, item_id, ...]}
 - {dataset}/item_sid_map.json       {item_id: {"code": [...], "sid_tokens": [...], "sid": "..."}}
+- {dataset}/sid_item_resolution.json
+                                    {sid: {"sid_tokens": [...], "candidate_item_ids": [...],
+                                           "candidate_item_freq": {...}, "canonical_item_id": ...}}
 - optional {dataset}/{dataset}.pretrain.json
                                     {item_id: {..., "sid": "<|sid_begin|>...<|sid_end|>"}}
 """
 
 import json
 import os
+from collections import Counter, defaultdict
 from typing import Dict, List
 
 import pandas as pd
@@ -129,6 +133,28 @@ def build_pretrain_json(item_info_json: str, item_sid_map: Dict[str, Dict], outp
     print(f"Items written: {len(pretrain)} (missed from item_info: {missed})")
 
 
+def build_sid_item_resolution(item_sid_map: Dict[str, Dict], interactions: Dict[str, List[int]]) -> Dict[str, Dict]:
+    item_freq = Counter()
+    for seq in interactions.values():
+        item_freq.update(int(x) for x in seq)
+
+    sid_to_items = defaultdict(list)
+    for item_id, pack in item_sid_map.items():
+        sid_to_items[pack["sid"]].append(int(item_id))
+
+    sid_resolution = {}
+    for sid, item_ids in sid_to_items.items():
+        uniq_items = sorted(set(item_ids))
+        canonical_item = sorted(uniq_items, key=lambda x: (-item_freq.get(x, 0), x))[0]
+        sid_resolution[sid] = {
+            "sid_tokens": item_sid_map[str(canonical_item)]["sid_tokens"],
+            "candidate_item_ids": uniq_items,
+            "candidate_item_freq": {str(i): int(item_freq.get(i, 0)) for i in uniq_items},
+            "canonical_item_id": int(canonical_item),
+        }
+    return sid_resolution
+
+
 def main():
     cfg = DEFAULT_CONFIG.copy()
     print("Using default config:")
@@ -176,6 +202,17 @@ def main():
     with open(inter_path, "w", encoding="utf-8") as f:
         json.dump(interactions, f, ensure_ascii=False)
     print(f"Saved interactions: {inter_path} (users: {len(interactions)})")
+
+    sid_resolution = build_sid_item_resolution(item_sid_map, interactions)
+    sid_resolution_path = os.path.join(dataset_dir, "sid_item_resolution.json")
+    with open(sid_resolution_path, "w", encoding="utf-8") as f:
+        json.dump(sid_resolution, f, ensure_ascii=False, indent=2)
+    multi_sid_count = sum(
+        1 for v in sid_resolution.values() if len(v["candidate_item_ids"]) > 1
+    )
+    print(f"Saved SID resolution: {sid_resolution_path}")
+    print(f"  unique SID count: {len(sid_resolution)}")
+    print(f"  SID mapped to multiple items: {multi_sid_count}")
 
     # Optional pretrain file
     if cfg["item_info_json"] and os.path.exists(cfg["item_info_json"]):
