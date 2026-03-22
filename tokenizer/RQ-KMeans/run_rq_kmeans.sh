@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # 设置参数
 INPUT_FILE="/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/item_text_embeddings.parquet"
-OUTPUT_FILE="/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/item_RQ-KMeans_codes.parquet"
+OUTPUT_FILE="/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/tiger_data/Beauty/item_RQ-KMeans_codes.parquet"
 MODEL_PATH="/llm-reco-ssd-share/zhangrongzhou/Graduation_project/models/beauty_rq_kmeans.pth"
 N_LAYERS=4
 CODEBOOK_SIZE=256
