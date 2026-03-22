@@ -14,6 +14,7 @@ Output parquet columns:
 import argparse
 import os
 from typing import Tuple
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -179,6 +180,78 @@ def save_codes(item_ids: np.ndarray, codes: np.ndarray, output_file: str):
     print(df.head())
 
 
+def collision_stats(codes: np.ndarray):
+    tuples = [tuple(c.tolist()) for c in codes]
+    groups = defaultdict(list)
+    for i, key in enumerate(tuples):
+        groups[key].append(i)
+    collision_groups = [idxs for idxs in groups.values() if len(idxs) > 1]
+    n = len(codes)
+    uniq = len(groups)
+    rate = (n - uniq) / max(n, 1)
+    max_dup = max((len(v) for v in groups.values()), default=1)
+    return rate, collision_groups, max_dup
+
+
+@torch.no_grad()
+def refine_collisions(
+    model: RQVAE,
+    emb: np.ndarray,
+    codes: np.ndarray,
+    args,
+    device: torch.device,
+):
+    best_codes = codes.copy()
+    best_rate, _, best_max_dup = collision_stats(best_codes)
+    print(
+        f"[Refine] initial collision_rate={best_rate:.4f}, max_dup={best_max_dup}, "
+        f"target={args.target_collision_rate:.4f}"
+    )
+
+    if best_rate <= args.target_collision_rate:
+        return best_codes
+
+    for round_idx in range(1, args.max_refine_rounds + 1):
+        rate, collision_groups, max_dup = collision_stats(codes)
+        print(
+            f"[Refine] round={round_idx} before: collision_rate={rate:.4f}, "
+            f"groups={len(collision_groups)}, max_dup={max_dup}"
+        )
+        if rate <= args.target_collision_rate or not collision_groups:
+            break
+
+        collision_indices = sorted({i for group in collision_groups for i in group})
+        if not collision_indices:
+            break
+        group_tensor = torch.from_numpy(emb[np.asarray(collision_indices)]).to(device, non_blocking=True)
+        new_codes = model.encode(
+            group_tensor,
+            use_sk=True,
+            sk_epsilon=args.refine_sk_epsilon,
+            sk_iters=args.refine_sk_iters,
+        ).cpu().numpy()
+        for j, idx in enumerate(collision_indices):
+            codes[idx] = new_codes[j]
+
+        new_rate, _, new_max_dup = collision_stats(codes)
+        print(
+            f"[Refine] round={round_idx} after : collision_rate={new_rate:.4f}, "
+            f"max_dup={new_max_dup}"
+        )
+        if new_rate < best_rate:
+            best_rate = new_rate
+            best_max_dup = new_max_dup
+            best_codes = codes.copy()
+            print(f"[Refine] new best collision_rate={best_rate:.4f}")
+        if best_rate <= args.target_collision_rate:
+            break
+
+    print(
+        f"[Refine] best collision_rate={best_rate:.4f}, best_max_dup={best_max_dup}"
+    )
+    return best_codes
+
+
 def save_checkpoint(model: RQVAE, path: str, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     ckpt = {
@@ -198,6 +271,11 @@ def save_checkpoint(model: RQVAE, path: str, args):
             "dead_code_threshold": args.dead_code_threshold,
             "kmeans_init": args.kmeans_init,
             "kmeans_iters": args.kmeans_iters,
+            "refine_collisions": args.refine_collisions,
+            "max_refine_rounds": args.max_refine_rounds,
+            "target_collision_rate": args.target_collision_rate,
+            "refine_sk_epsilon": args.refine_sk_epsilon,
+            "refine_sk_iters": args.refine_sk_iters,
         },
     }
     torch.save(ckpt, path)
@@ -250,6 +328,11 @@ def parse_args():
         default=False,
         help="L2-normalize embeddings before training",
     )
+    parser.add_argument("--refine_collisions", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max_refine_rounds", type=int, default=20)
+    parser.add_argument("--target_collision_rate", type=float, default=0.10)
+    parser.add_argument("--refine_sk_epsilon", type=float, default=0.003)
+    parser.add_argument("--refine_sk_iters", type=int, default=50)
     return parser.parse_args()
 
 
@@ -277,6 +360,12 @@ def main():
         save_checkpoint(model, args.model_path, args)
 
     codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device)
+    init_rate, _, init_max_dup = collision_stats(codes)
+    print(f"[Codes] initial collision_rate={init_rate:.4f}, max_dup={init_max_dup}")
+    if args.refine_collisions:
+        codes = refine_collisions(model, embeddings, codes, args, device)
+        final_rate, _, final_max_dup = collision_stats(codes)
+        print(f"[Codes] refined collision_rate={final_rate:.4f}, max_dup={final_max_dup}")
     save_codes(item_ids, codes, args.output_file)
 
 

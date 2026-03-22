@@ -38,11 +38,56 @@ class ResidualVectorQuantizer(nn.Module):
             self.codebooks.clone(),
         )
 
-    def _quantize_once(self, x: torch.Tensor, codebook: torch.Tensor):
+    @staticmethod
+    def _center_distance_for_constraint(distances: torch.Tensor):
+        max_distance = distances.max()
+        min_distance = distances.min()
+        middle = (max_distance + min_distance) / 2.0
+        amplitude = (max_distance - middle).clamp(min=1e-5)
+        return (distances - middle) / amplitude
+
+    @staticmethod
+    def _sinkhorn_algorithm(distances: torch.Tensor, epsilon: float, sinkhorn_iterations: int):
+        q = torch.exp(-distances / epsilon)
+        b = q.shape[0]
+        k = q.shape[1]
+        sum_q = q.sum(dim=1, keepdim=True).sum(dim=0, keepdim=True).clamp(min=1e-12)
+        q = q / sum_q
+        for _ in range(sinkhorn_iterations):
+            q = q / q.sum(dim=1, keepdim=True).clamp(min=1e-12)
+            q = q / b
+            q = q / q.sum(dim=0, keepdim=True).clamp(min=1e-12)
+            q = q / k
+        q = q * b
+        return q
+
+    def _assign_indices(
+        self,
+        distances: torch.Tensor,
+        use_sk: bool = False,
+        sk_epsilon: float = 0.0,
+        sk_iters: int = 50,
+    ):
+        if (not use_sk) or sk_epsilon <= 0.0 or distances.shape[0] <= 1:
+            return distances.argmin(dim=1)
+        centered = self._center_distance_for_constraint(distances).double()
+        q = self._sinkhorn_algorithm(centered, sk_epsilon, sk_iters)
+        return torch.argmax(q, dim=1).long()
+
+    def _quantize_once(
+        self,
+        x: torch.Tensor,
+        codebook: torch.Tensor,
+        use_sk: bool = False,
+        sk_epsilon: float = 0.0,
+        sk_iters: int = 50,
+    ):
         x_sq = (x ** 2).sum(dim=1, keepdim=True)
         cb_sq = (codebook ** 2).sum(dim=1).unsqueeze(0)
         distances = x_sq + cb_sq - 2.0 * x @ codebook.t()
-        indices = distances.argmin(dim=1)
+        indices = self._assign_indices(
+            distances, use_sk=use_sk, sk_epsilon=sk_epsilon, sk_iters=sk_iters
+        )
         quantized = codebook[indices]
         return quantized, indices, distances
 
@@ -114,7 +159,13 @@ class ResidualVectorQuantizer(nn.Module):
                     centers[i] = x[torch.randint(0, n, (1,), device=x.device)]
         return centers
 
-    def quantize(self, z: torch.Tensor):
+    def quantize(
+        self,
+        z: torch.Tensor,
+        use_sk: bool = False,
+        sk_epsilon: float = 0.0,
+        sk_iters: int = 50,
+    ):
         residual = z
         quantized_sum = torch.zeros_like(z)
         all_indices = []
@@ -123,7 +174,13 @@ class ResidualVectorQuantizer(nn.Module):
         all_distances = []
 
         for layer in range(self.num_layers):
-            q, idx, distances = self._quantize_once(residual, self.codebooks[layer])
+            q, idx, distances = self._quantize_once(
+                residual,
+                self.codebooks[layer],
+                use_sk=(use_sk and not self.training),
+                sk_epsilon=sk_epsilon,
+                sk_iters=sk_iters,
+            )
 
             if self.training and self.ema:
                 self._ema_update(layer=layer, residual=residual.detach(), indices=idx.detach())
@@ -140,8 +197,16 @@ class ResidualVectorQuantizer(nn.Module):
         return quantized_sum, codes, all_layer_q, all_cum_q, all_distances
 
     @torch.no_grad()
-    def encode(self, z: torch.Tensor):
-        _, codes, _, _, _ = self.quantize(z)
+    def encode(
+        self,
+        z: torch.Tensor,
+        use_sk: bool = False,
+        sk_epsilon: float = 0.0,
+        sk_iters: int = 50,
+    ):
+        _, codes, _, _, _ = self.quantize(
+            z, use_sk=use_sk, sk_epsilon=sk_epsilon, sk_iters=sk_iters
+        )
         return codes
 
     def decode(self, codes: torch.Tensor):
@@ -275,6 +340,12 @@ class RQVAE(nn.Module):
         }
 
     @torch.no_grad()
-    def encode(self, x: torch.Tensor):
+    def encode(
+        self,
+        x: torch.Tensor,
+        use_sk: bool = False,
+        sk_epsilon: float = 0.0,
+        sk_iters: int = 50,
+    ):
         mu, _ = self.encode_to_latent(x)
-        return self.rq.encode(mu)
+        return self.rq.encode(mu, use_sk=use_sk, sk_epsilon=sk_epsilon, sk_iters=sk_iters)
