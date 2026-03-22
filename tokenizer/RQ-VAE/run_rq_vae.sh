@@ -17,6 +17,7 @@ LR=${LR:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-5}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 KL_WEIGHT=${KL_WEIGHT:-0.0}
+BALANCE_WEIGHT=${BALANCE_WEIGHT:-0.05}
 NUM_WORKERS=${NUM_WORKERS:-4}
 SEED=${SEED:-2025}
 EMA_DECAY=${EMA_DECAY:-0.95}
@@ -39,7 +40,7 @@ echo "  model_path=${MODEL_PATH}"
 echo "  n_layers=${N_LAYERS}, codebook_size=${CODEBOOK_SIZE}"
 echo "  hidden_dim=${HIDDEN_DIM}, latent_dim=${LATENT_DIM}"
 echo "  epochs=${EPOCHS}, batch_size=${BATCH_SIZE}, lr=${LR}"
-echo "  kl_weight=${KL_WEIGHT}, ema_decay=${EMA_DECAY}, dead_code_th=${DEAD_CODE_THRESHOLD}"
+echo "  kl_weight=${KL_WEIGHT}, balance_weight=${BALANCE_WEIGHT}, ema_decay=${EMA_DECAY}, dead_code_th=${DEAD_CODE_THRESHOLD}"
 echo "  refine_collisions=${REFINE_COLLISIONS}, target_collision_rate=${TARGET_COLLISION_RATE}"
 
 CMD=(
@@ -57,6 +58,7 @@ CMD=(
   --weight_decay "${WEIGHT_DECAY}" \
   --commitment_weight "${COMMITMENT_WEIGHT}" \
   --kl_weight "${KL_WEIGHT}" \
+  --balance_weight "${BALANCE_WEIGHT}" \
   --ema_decay "${EMA_DECAY}" \
   --dead_code_threshold "${DEAD_CODE_THRESHOLD}" \
   --max_refine_rounds "${MAX_REFINE_ROUNDS}" \

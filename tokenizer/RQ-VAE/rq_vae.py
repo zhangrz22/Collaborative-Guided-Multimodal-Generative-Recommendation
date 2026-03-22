@@ -190,6 +190,7 @@ class RQVAE(nn.Module):
         codebook_size: int = 256,
         commitment_weight: float = 0.25,
         kl_weight: float = 0.0,
+        balance_weight: float = 0.05,
         ema: bool = True,
         ema_decay: float = 0.99,
         restart_unused_codes: bool = True,
@@ -203,6 +204,7 @@ class RQVAE(nn.Module):
         self.codebook_size = codebook_size
         self.commitment_weight = commitment_weight
         self.kl_weight = kl_weight
+        self.balance_weight = balance_weight
         self.ema = ema
 
         self.encoder = nn.Sequential(
@@ -251,12 +253,23 @@ class RQVAE(nn.Module):
         commit_loss = sum(commit_terms) / max(len(commit_terms), 1)
 
         kl_loss = torch.zeros((), device=x.device)
+        # Encourage balanced code usage per layer:
+        # minimize (logK - H(p_layer)), where p_layer is batch code histogram.
+        balance_terms = []
+        log_k = torch.log(torch.tensor(float(self.codebook_size), device=x.device))
+        for layer in range(codes.shape[1]):
+            counts = torch.bincount(codes[:, layer], minlength=self.codebook_size).float()
+            probs = (counts / counts.sum().clamp(min=1.0)).clamp(min=1e-12)
+            entropy = -(probs * probs.log()).sum()
+            balance_terms.append(log_k - entropy)
+        balance_loss = sum(balance_terms) / max(len(balance_terms), 1)
 
         loss = (
             recon_loss
             + codebook_loss
             + self.commitment_weight * commit_loss
             + self.kl_weight * kl_loss
+            + self.balance_weight * balance_loss
         )
         return {
             "loss": loss,
@@ -264,6 +277,7 @@ class RQVAE(nn.Module):
             "codebook_loss": codebook_loss.detach(),
             "commit_loss": commit_loss.detach(),
             "kl_loss": kl_loss.detach(),
+            "balance_loss": balance_loss.detach(),
             "codes": codes,
             "x_rec": x_rec,
             "mu": z,
