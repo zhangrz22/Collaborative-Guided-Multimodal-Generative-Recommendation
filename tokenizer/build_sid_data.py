@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Build TIGER SID data from RQ-KMeans item codes.
+Build TIGER SID data from RQ tokenizer codes (default: RQ-VAE).
 
 Inputs:
-1) item_codes.parquet with columns: item_id, code (e.g. [3, 189, 128, 88])
+1) item_RQ-VAE_codes.parquet with columns: item_id, code (e.g. [3, 189, 128, 88])
 2) interaction sequence txt (user_id \t item_id item_id ...)
 3) optional item_info.json
 
@@ -38,8 +38,8 @@ DEFAULT_DATASET = "Beauty"
 DEFAULT_DATASET_DIR = os.path.join(DEFAULT_TIGER_DATA_DIR, DEFAULT_DATASET)
 
 DEFAULT_CONFIG = {
-    # Put/generated item_codes.parquet here by default
-    "codes_parquet": os.path.join(DEFAULT_DATASET_DIR, "item_codes.parquet"),
+    # Default to RQ-VAE output parquet
+    "codes_parquet": os.path.join(DEFAULT_DATASET_DIR, "item_RQ-VAE_codes.parquet"),
     # Existing user sequence file
     "interaction_txt": os.path.join(DEFAULT_DATA_ROOT, "interaction_sequences_truncated.txt"),
     # TIGER-only data output root
@@ -172,7 +172,8 @@ def main():
     if not os.path.exists(cfg["codes_parquet"]):
         raise FileNotFoundError(
             f"codes_parquet not found: {cfg['codes_parquet']}\n"
-            f"Please place item_codes.parquet there, or edit DEFAULT_CONFIG in this script."
+            "Please place RQ code parquet there (default expects item_RQ-VAE_codes.parquet), "
+            "or edit DEFAULT_CONFIG in this script."
         )
     if not os.path.exists(cfg["interaction_txt"]):
         raise FileNotFoundError(
