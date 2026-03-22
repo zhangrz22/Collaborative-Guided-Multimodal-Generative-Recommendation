@@ -46,6 +46,8 @@ def build_model(args, input_dim: int, device: torch.device):
         codebook_size=args.codebook_size,
         commitment_weight=args.commitment_weight,
         kl_weight=args.kl_weight,
+        balance_weight=args.balance_weight,
+        entropy_temp=args.entropy_temp,
         ema=args.ema,
         ema_decay=args.ema_decay,
         restart_unused_codes=args.restart_unused_codes,
@@ -93,7 +95,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
     scaler = torch.cuda.amp.GradScaler(enabled=(device.type == "cuda" and args.amp))
     for epoch in range(1, args.epochs + 1):
         model.train()
-        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0}
+        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0, "balance": 0.0}
         count = 0
         code_counts = torch.zeros(
             (args.n_layers, args.codebook_size), dtype=torch.long, device="cpu"
@@ -118,6 +120,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             stats["vq"] += out["codebook_loss"].item() * bs
             stats["commit"] += out["commit_loss"].item() * bs
             stats["kl"] += out["kl_loss"].item() * bs
+            stats["balance"] += out["balance_loss"].item() * bs
 
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
@@ -138,6 +141,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             f"vq={stats['vq']/count:.6f} "
             f"commit={stats['commit']/count:.6f} "
             f"kl={stats['kl']/count:.6f} "
+            f"balance={stats['balance']/count:.6f} "
             f"| {usage_str}"
         )
 
@@ -186,6 +190,8 @@ def save_checkpoint(model: RQVAE, path: str, args):
             "codebook_size": args.codebook_size,
             "commitment_weight": args.commitment_weight,
             "kl_weight": args.kl_weight,
+            "balance_weight": args.balance_weight,
+            "entropy_temp": args.entropy_temp,
             "ema": args.ema,
             "ema_decay": args.ema_decay,
             "restart_unused_codes": args.restart_unused_codes,
@@ -222,10 +228,12 @@ def parse_args():
     parser.add_argument("--latent_dim", type=int, default=256)
     parser.add_argument("--commitment_weight", type=float, default=0.25)
     parser.add_argument("--kl_weight", type=float, default=0.0)
+    parser.add_argument("--balance_weight", type=float, default=0.1)
+    parser.add_argument("--entropy_temp", type=float, default=0.5)
     parser.add_argument("--ema", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--ema_decay", type=float, default=0.99)
+    parser.add_argument("--ema_decay", type=float, default=0.95)
     parser.add_argument("--restart_unused_codes", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--dead_code_threshold", type=float, default=1.0)
+    parser.add_argument("--dead_code_threshold", type=float, default=10.0)
     parser.add_argument("--kmeans_init", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--kmeans_iters", type=int, default=25)
 
@@ -239,7 +247,7 @@ def parse_args():
     parser.add_argument(
         "--normalize",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=False,
         help="L2-normalize embeddings before training",
     )
     return parser.parse_args()

@@ -44,7 +44,7 @@ class ResidualVectorQuantizer(nn.Module):
         distances = x_sq + cb_sq - 2.0 * x @ codebook.t()
         indices = distances.argmin(dim=1)
         quantized = codebook[indices]
-        return quantized, indices
+        return quantized, indices, distances
 
     @torch.no_grad()
     def _ema_update(self, layer: int, residual: torch.Tensor, indices: torch.Tensor):
@@ -87,7 +87,7 @@ class ResidualVectorQuantizer(nn.Module):
             self.ema_embed_avg[layer].copy_(centers)
             self.ema_cluster_size[layer].fill_(1.0)
 
-            _, idx = self._quantize_once(residual, self.codebooks[layer])
+            _, idx, _ = self._quantize_once(residual, self.codebooks[layer])
             q = self.codebooks[layer][idx]
             residual = residual - q
 
@@ -120,9 +120,10 @@ class ResidualVectorQuantizer(nn.Module):
         all_indices = []
         all_layer_q = []
         all_cum_q = []
+        all_distances = []
 
         for layer in range(self.num_layers):
-            q, idx = self._quantize_once(residual, self.codebooks[layer])
+            q, idx, distances = self._quantize_once(residual, self.codebooks[layer])
 
             if self.training and self.ema:
                 self._ema_update(layer=layer, residual=residual.detach(), indices=idx.detach())
@@ -133,13 +134,14 @@ class ResidualVectorQuantizer(nn.Module):
             all_indices.append(idx)
             all_layer_q.append(q)
             all_cum_q.append(quantized_sum.clone())
+            all_distances.append(distances)
 
         codes = torch.stack(all_indices, dim=1)
-        return quantized_sum, codes, all_layer_q, all_cum_q
+        return quantized_sum, codes, all_layer_q, all_cum_q, all_distances
 
     @torch.no_grad()
     def encode(self, z: torch.Tensor):
-        _, codes, _, _ = self.quantize(z)
+        _, codes, _, _, _ = self.quantize(z)
         return codes
 
     def decode(self, codes: torch.Tensor):
@@ -164,6 +166,8 @@ class RQVAE(nn.Module):
         codebook_size: int = 256,
         commitment_weight: float = 0.25,
         kl_weight: float = 0.0,
+        balance_weight: float = 0.1,
+        entropy_temp: float = 0.5,
         ema: bool = True,
         ema_decay: float = 0.99,
         restart_unused_codes: bool = True,
@@ -177,6 +181,8 @@ class RQVAE(nn.Module):
         self.codebook_size = codebook_size
         self.commitment_weight = commitment_weight
         self.kl_weight = kl_weight
+        self.balance_weight = balance_weight
+        self.entropy_temp = entropy_temp
         self.ema = ema
 
         self.encoder = nn.Sequential(
@@ -219,7 +225,7 @@ class RQVAE(nn.Module):
         mu, logvar = self.encode_to_latent(x)
         z = self.reparameterize(mu, logvar)
 
-        z_q, codes, layer_q, cum_q = self.rq.quantize(z)
+        z_q, codes, layer_q, cum_q, all_distances = self.rq.quantize(z)
         z_q_st = z + (z_q - z).detach()
         x_rec = self.decoder(z_q_st)
 
@@ -234,12 +240,24 @@ class RQVAE(nn.Module):
         commit_loss = sum(commit_terms) / max(len(commit_terms), 1)
 
         kl_loss = -0.5 * torch.mean(1.0 + logvar - mu.pow(2) - logvar.exp())
+        # Entropy-based balancing across codes per layer.
+        # Minimize (logK - H(mean_prob)): lower is more uniform assignment.
+        balance_terms = []
+        k = self.codebook_size
+        log_k = torch.log(torch.tensor(float(k), device=x.device))
+        for distances in all_distances:
+            probs = F.softmax(-distances / self.entropy_temp, dim=1)
+            mean_prob = probs.mean(dim=0).clamp(min=1e-12)
+            entropy = -(mean_prob * mean_prob.log()).sum()
+            balance_terms.append(log_k - entropy)
+        balance_loss = sum(balance_terms) / max(len(balance_terms), 1)
 
         loss = (
             recon_loss
             + codebook_loss
             + self.commitment_weight * commit_loss
             + self.kl_weight * kl_loss
+            + self.balance_weight * balance_loss
         )
         return {
             "loss": loss,
@@ -247,6 +265,7 @@ class RQVAE(nn.Module):
             "codebook_loss": codebook_loss.detach(),
             "commit_loss": commit_loss.detach(),
             "kl_loss": kl_loss.detach(),
+            "balance_loss": balance_loss.detach(),
             "codes": codes,
             "x_rec": x_rec,
             "mu": mu,
@@ -259,4 +278,3 @@ class RQVAE(nn.Module):
     def encode(self, x: torch.Tensor):
         mu, _ = self.encode_to_latent(x)
         return self.rq.encode(mu)
-

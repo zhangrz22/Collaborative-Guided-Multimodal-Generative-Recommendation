@@ -17,15 +17,17 @@ LR=${LR:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-5}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 KL_WEIGHT=${KL_WEIGHT:-0.0}
+BALANCE_WEIGHT=${BALANCE_WEIGHT:-0.1}
+ENTROPY_TEMP=${ENTROPY_TEMP:-0.5}
 NUM_WORKERS=${NUM_WORKERS:-4}
 SEED=${SEED:-2025}
-EMA_DECAY=${EMA_DECAY:-0.99}
-DEAD_CODE_THRESHOLD=${DEAD_CODE_THRESHOLD:-1.0}
+EMA_DECAY=${EMA_DECAY:-0.95}
+DEAD_CODE_THRESHOLD=${DEAD_CODE_THRESHOLD:-10.0}
 KMEANS_ITERS=${KMEANS_ITERS:-25}
 USE_EMA=${USE_EMA:-true}
 RESTART_UNUSED_CODES=${RESTART_UNUSED_CODES:-true}
 KMEANS_INIT=${KMEANS_INIT:-true}
-NORMALIZE=${NORMALIZE:-true}
+NORMALIZE=${NORMALIZE:-false}
 
 LOG_FILE="${SCRIPT_DIR}/rq_vae_$(date +%Y%m%d_%H%M%S).log"
 mkdir -p "$(dirname "$OUTPUT_FILE")" "$(dirname "$MODEL_PATH")"
@@ -37,7 +39,8 @@ echo "  model_path=${MODEL_PATH}"
 echo "  n_layers=${N_LAYERS}, codebook_size=${CODEBOOK_SIZE}"
 echo "  hidden_dim=${HIDDEN_DIM}, latent_dim=${LATENT_DIM}"
 echo "  epochs=${EPOCHS}, batch_size=${BATCH_SIZE}, lr=${LR}"
-echo "  kl_weight=${KL_WEIGHT}, ema_decay=${EMA_DECAY}, dead_code_th=${DEAD_CODE_THRESHOLD}"
+echo "  kl_weight=${KL_WEIGHT}, balance_weight=${BALANCE_WEIGHT}, entropy_temp=${ENTROPY_TEMP}"
+echo "  ema_decay=${EMA_DECAY}, dead_code_th=${DEAD_CODE_THRESHOLD}, normalize=${NORMALIZE}"
 
 CMD=(
   python3 "${SCRIPT_DIR}/process_embedding.py"
@@ -54,6 +57,8 @@ CMD=(
   --weight_decay "${WEIGHT_DECAY}" \
   --commitment_weight "${COMMITMENT_WEIGHT}" \
   --kl_weight "${KL_WEIGHT}" \
+  --balance_weight "${BALANCE_WEIGHT}" \
+  --entropy_temp "${ENTROPY_TEMP}" \
   --ema_decay "${EMA_DECAY}" \
   --dead_code_threshold "${DEAD_CODE_THRESHOLD}" \
   --kmeans_iters "${KMEANS_ITERS}" \
