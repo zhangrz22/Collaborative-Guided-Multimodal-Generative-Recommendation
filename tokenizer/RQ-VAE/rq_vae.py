@@ -120,6 +120,42 @@ class ResidualVectorQuantizer(nn.Module):
         denom = (self.ema_cluster_size[layer] + 1e-5) / (n + self.codebook_size * 1e-5) * n
         self.codebooks[layer] = self.ema_embed_avg[layer] / denom.unsqueeze(1)
 
+    @torch.no_grad()
+    def init_codebooks_kmeans(self, z: torch.Tensor, n_iters: int = 25):
+        residual = z.clone()
+        for layer in range(self.num_layers):
+            centers = self._kmeans_torch(residual, self.codebook_size, n_iters=n_iters)
+            self.codebooks[layer].copy_(centers)
+            self.ema_embed_avg[layer].copy_(centers)
+            self.ema_cluster_size[layer].fill_(1.0)
+
+            _, idx, _ = self._quantize_once(residual, self.codebooks[layer])
+            q = self.codebooks[layer][idx]
+            residual = residual - q
+
+    @staticmethod
+    @torch.no_grad()
+    def _kmeans_torch(x: torch.Tensor, k: int, n_iters: int = 25):
+        n = x.shape[0]
+        if n < k:
+            repeat = (k + n - 1) // n
+            x = x.repeat(repeat, 1)
+            n = x.shape[0]
+
+        perm = torch.randperm(n, device=x.device)
+        centers = x[perm[:k]].clone()
+
+        for _ in range(n_iters):
+            distances = torch.cdist(x, centers, p=2)
+            assign = distances.argmin(dim=1)
+            counts = torch.bincount(assign, minlength=k)
+            for i in range(k):
+                if counts[i] > 0:
+                    centers[i] = x[assign == i].mean(dim=0)
+                else:
+                    centers[i] = x[torch.randint(0, n, (1,), device=x.device)]
+        return centers
+
     def quantize(
         self,
         z: torch.Tensor,
@@ -190,7 +226,6 @@ class RQVAE(nn.Module):
         codebook_size: int = 256,
         commitment_weight: float = 0.25,
         kl_weight: float = 0.0,
-        balance_weight: float = 0.05,
         ema: bool = True,
         ema_decay: float = 0.99,
         restart_unused_codes: bool = True,
@@ -204,7 +239,6 @@ class RQVAE(nn.Module):
         self.codebook_size = codebook_size
         self.commitment_weight = commitment_weight
         self.kl_weight = kl_weight
-        self.balance_weight = balance_weight
         self.ema = ema
 
         self.encoder = nn.Sequential(
@@ -253,23 +287,12 @@ class RQVAE(nn.Module):
         commit_loss = sum(commit_terms) / max(len(commit_terms), 1)
 
         kl_loss = torch.zeros((), device=x.device)
-        # Encourage balanced code usage per layer:
-        # minimize (logK - H(p_layer)), where p_layer is batch code histogram.
-        balance_terms = []
-        log_k = torch.log(torch.tensor(float(self.codebook_size), device=x.device))
-        for layer in range(codes.shape[1]):
-            counts = torch.bincount(codes[:, layer], minlength=self.codebook_size).float()
-            probs = (counts / counts.sum().clamp(min=1.0)).clamp(min=1e-12)
-            entropy = -(probs * probs.log()).sum()
-            balance_terms.append(log_k - entropy)
-        balance_loss = sum(balance_terms) / max(len(balance_terms), 1)
 
         loss = (
             recon_loss
             + codebook_loss
             + self.commitment_weight * commit_loss
             + self.kl_weight * kl_loss
-            + self.balance_weight * balance_loss
         )
         return {
             "loss": loss,
@@ -277,7 +300,6 @@ class RQVAE(nn.Module):
             "codebook_loss": codebook_loss.detach(),
             "commit_loss": commit_loss.detach(),
             "kl_loss": kl_loss.detach(),
-            "balance_loss": balance_loss.detach(),
             "codes": codes,
             "x_rec": x_rec,
             "mu": z,
