@@ -48,7 +48,8 @@ def build_model(args, input_dim: int, device: torch.device):
         codebook_size=args.codebook_size,
         commitment_weight=args.commitment_weight,
         kl_weight=args.kl_weight,
-        entropy_weight=args.entropy_weight,
+        balance_weight=args.balance_weight,
+        entropy_temp=args.entropy_temp,
         ema=args.ema,
         ema_decay=args.ema_decay,
         restart_unused_codes=args.restart_unused_codes,
@@ -90,16 +91,14 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
         print(f"Running residual kmeans init, iters={args.kmeans_iters} ...")
         init_x = x.to(device, non_blocking=True)
         with torch.no_grad():
-            z = model.encode_to_latent(init_x)
-            model.rq.init_codebooks_kmeans(z, n_iters=args.kmeans_iters)
+            mu, _ = model.encode_to_latent(init_x)
+            model.rq.init_codebooks_kmeans(mu, n_iters=args.kmeans_iters)
         print("Kmeans init done.")
 
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda" and args.amp))
-    best_loss = float("inf")
-    best_epoch = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
-        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0, "entropy": 0.0}
+        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0, "balance": 0.0}
         count = 0
         code_counts = torch.zeros(
             (args.n_layers, args.codebook_size), dtype=torch.long, device="cpu"
@@ -131,7 +130,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             stats["vq"] += out["codebook_loss"].item() * bs
             stats["commit"] += out["commit_loss"].item() * bs
             stats["kl"] += out["kl_loss"].item() * bs
-            stats["entropy"] += out["entropy_loss"].item() * bs
+            stats["balance"] += out["balance_loss"].item() * bs
 
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
@@ -155,19 +154,11 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             f"recon={stats['recon']/count:.6f} "
             f"vq={stats['vq']/count:.6f} "
             f"commit={stats['commit']/count:.6f} "
-            f"entropy={stats['entropy']/count:.6f} "
+            f"kl={stats['kl']/count:.6f} "
+            f"balance={stats['balance']/count:.6f} "
             f"lr={current_lr:.2e} "
             f"| {usage_str}"
         )
-
-        # Save best checkpoint
-        if epoch_loss < best_loss:
-            best_loss = epoch_loss
-            best_epoch = epoch
-            save_checkpoint(model, args.model_path, args)
-            print(f"  -> Best model saved (epoch {epoch}, loss={epoch_loss:.6f})")
-
-    print(f"Training done. Best epoch={best_epoch}, best_loss={best_loss:.6f}")
 
 
 @torch.no_grad()
@@ -292,7 +283,8 @@ def save_checkpoint(model: RQVAE, path: str, args):
             "codebook_size": args.codebook_size,
             "commitment_weight": args.commitment_weight,
             "kl_weight": args.kl_weight,
-            "entropy_weight": args.entropy_weight,
+            "balance_weight": args.balance_weight,
+            "entropy_temp": args.entropy_temp,
             "ema": args.ema,
             "ema_decay": args.ema_decay,
             "restart_unused_codes": args.restart_unused_codes,
@@ -334,7 +326,8 @@ def parse_args():
     parser.add_argument("--latent_dim", type=int, default=256)
     parser.add_argument("--commitment_weight", type=float, default=0.25)
     parser.add_argument("--kl_weight", type=float, default=0.0)
-    parser.add_argument("--entropy_weight", type=float, default=0.1)
+    parser.add_argument("--balance_weight", type=float, default=0.1)
+    parser.add_argument("--entropy_temp", type=float, default=0.5)
     parser.add_argument("--ema", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--ema_decay", type=float, default=0.95)
     parser.add_argument("--restart_unused_codes", action=argparse.BooleanOptionalAction, default=True)
@@ -349,8 +342,14 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=2025)
+    parser.add_argument(
+        "--normalize",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="L2-normalize embeddings before training",
+    )
     parser.add_argument("--refine_collisions", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--max_refine_rounds", type=int, default=2)
+    parser.add_argument("--max_refine_rounds", type=int, default=20)
     parser.add_argument("--target_collision_rate", type=float, default=0.10)
     parser.add_argument("--refine_sk_epsilon", type=float, default=0.003)
     parser.add_argument("--refine_sk_iters", type=int, default=50)
@@ -366,6 +365,10 @@ def main():
         raise FileNotFoundError(f"Input not found: {args.input_file}")
 
     item_ids, embeddings = load_parquet_embeddings(args.input_file)
+    if args.normalize:
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-12
+        embeddings = embeddings / norms
+        print("Applied L2 normalization to embeddings.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = build_model(args, input_dim=embeddings.shape[1], device=device)
@@ -374,9 +377,7 @@ def main():
         load_checkpoint(model, args.model_path, device)
     else:
         train_model(model, embeddings, args, device)
-        # Reload best checkpoint for encoding
-        if os.path.exists(args.model_path):
-            load_checkpoint(model, args.model_path, device)
+        save_checkpoint(model, args.model_path, args)
 
     codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device, use_amp=args.amp)
     init_rate, _, init_max_dup = collision_stats(codes)
