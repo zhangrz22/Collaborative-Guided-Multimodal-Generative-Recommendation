@@ -321,9 +321,9 @@ def parse_args():
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--refine_collisions", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--max_refine_rounds", type=int, default=20)
-    parser.add_argument("--target_collision_rate", type=float, default=0.10)
-    parser.add_argument("--refine_sk_epsilon", type=float, default=0.003)
+    parser.add_argument("--max_refine_rounds", type=int, default=1)
+    parser.add_argument("--target_collision_rate", type=float, default=0.20)
+    parser.add_argument("--refine_sk_epsilon", type=float, default=0.02)
     parser.add_argument("--refine_sk_iters", type=int, default=50)
     return parser.parse_args()
 
