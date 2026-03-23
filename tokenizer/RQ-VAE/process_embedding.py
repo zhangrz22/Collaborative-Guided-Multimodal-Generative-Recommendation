@@ -83,6 +83,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
         drop_last=False,
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr * 0.01)
 
     if args.kmeans_init:
         print(f"Running residual kmeans init, iters={args.kmeans_iters} ...")
@@ -93,6 +94,8 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
         print("Kmeans init done.")
 
     scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda" and args.amp))
+    best_loss = float("inf")
+    best_epoch = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
         stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0}
@@ -115,6 +118,8 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
                 loss = out["loss"]
 
             scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(optimizer)
             scaler.update()
 
@@ -131,6 +136,9 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
                 binc = torch.bincount(codes[:, layer], minlength=args.codebook_size)
                 code_counts[layer] += binc
 
+        scheduler.step()
+
+        epoch_loss = stats["loss"] / count
         usage = summarize_code_usage(code_counts)
         usage_str = " ".join(
             [
@@ -138,15 +146,26 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
                 for i, (u, ppl, used) in enumerate(usage)
             ]
         )
+        current_lr = optimizer.param_groups[0]["lr"]
         print(
             f"[Epoch {epoch}] "
-            f"loss={stats['loss']/count:.6f} "
+            f"loss={epoch_loss:.6f} "
             f"recon={stats['recon']/count:.6f} "
             f"vq={stats['vq']/count:.6f} "
             f"commit={stats['commit']/count:.6f} "
             f"kl={stats['kl']/count:.6f} "
+            f"lr={current_lr:.2e} "
             f"| {usage_str}"
         )
+
+        # Save best checkpoint
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            best_epoch = epoch
+            save_checkpoint(model, args.model_path, args)
+            print(f"  -> Best model saved (epoch {epoch}, loss={epoch_loss:.6f})")
+
+    print(f"Training done. Best epoch={best_epoch}, best_loss={best_loss:.6f}")
 
 
 @torch.no_grad()
@@ -321,9 +340,9 @@ def parse_args():
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=2025)
     parser.add_argument("--refine_collisions", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--max_refine_rounds", type=int, default=1)
-    parser.add_argument("--target_collision_rate", type=float, default=0.20)
-    parser.add_argument("--refine_sk_epsilon", type=float, default=0.02)
+    parser.add_argument("--max_refine_rounds", type=int, default=2)
+    parser.add_argument("--target_collision_rate", type=float, default=0.10)
+    parser.add_argument("--refine_sk_epsilon", type=float, default=0.003)
     parser.add_argument("--refine_sk_iters", type=int, default=50)
     return parser.parse_args()
 
@@ -345,7 +364,9 @@ def main():
         load_checkpoint(model, args.model_path, device)
     else:
         train_model(model, embeddings, args, device)
-        save_checkpoint(model, args.model_path, args)
+        # Reload best checkpoint for encoding
+        if os.path.exists(args.model_path):
+            load_checkpoint(model, args.model_path, device)
 
     codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device)
     init_rate, _, init_max_dup = collision_stats(codes)
