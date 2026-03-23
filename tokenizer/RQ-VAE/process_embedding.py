@@ -48,6 +48,7 @@ def build_model(args, input_dim: int, device: torch.device):
         codebook_size=args.codebook_size,
         commitment_weight=args.commitment_weight,
         kl_weight=args.kl_weight,
+        entropy_weight=args.entropy_weight,
         ema=args.ema,
         ema_decay=args.ema_decay,
         restart_unused_codes=args.restart_unused_codes,
@@ -98,7 +99,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
     best_epoch = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
-        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0}
+        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0, "entropy": 0.0}
         count = 0
         code_counts = torch.zeros(
             (args.n_layers, args.codebook_size), dtype=torch.long, device="cpu"
@@ -130,6 +131,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             stats["vq"] += out["codebook_loss"].item() * bs
             stats["commit"] += out["commit_loss"].item() * bs
             stats["kl"] += out["kl_loss"].item() * bs
+            stats["entropy"] += out["entropy_loss"].item() * bs
 
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
@@ -153,7 +155,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
             f"recon={stats['recon']/count:.6f} "
             f"vq={stats['vq']/count:.6f} "
             f"commit={stats['commit']/count:.6f} "
-            f"kl={stats['kl']/count:.6f} "
+            f"entropy={stats['entropy']/count:.6f} "
             f"lr={current_lr:.2e} "
             f"| {usage_str}"
         )
@@ -284,6 +286,7 @@ def save_checkpoint(model: RQVAE, path: str, args):
             "codebook_size": args.codebook_size,
             "commitment_weight": args.commitment_weight,
             "kl_weight": args.kl_weight,
+            "entropy_weight": args.entropy_weight,
             "ema": args.ema,
             "ema_decay": args.ema_decay,
             "restart_unused_codes": args.restart_unused_codes,
@@ -325,6 +328,7 @@ def parse_args():
     parser.add_argument("--latent_dim", type=int, default=256)
     parser.add_argument("--commitment_weight", type=float, default=0.25)
     parser.add_argument("--kl_weight", type=float, default=0.0)
+    parser.add_argument("--entropy_weight", type=float, default=0.1)
     parser.add_argument("--ema", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--ema_decay", type=float, default=0.95)
     parser.add_argument("--restart_unused_codes", action=argparse.BooleanOptionalAction, default=True)
