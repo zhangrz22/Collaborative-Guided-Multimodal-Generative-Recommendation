@@ -171,7 +171,7 @@ def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
 
 
 @torch.no_grad()
-def encode_embeddings(model: RQVAE, emb: np.ndarray, batch_size: int, device: torch.device):
+def encode_embeddings(model: RQVAE, emb: np.ndarray, batch_size: int, device: torch.device, use_amp: bool = False):
     x = torch.from_numpy(emb)
     loader = DataLoader(
         TensorDataset(x),
@@ -185,7 +185,13 @@ def encode_embeddings(model: RQVAE, emb: np.ndarray, batch_size: int, device: to
     model.eval()
     for (batch_x,) in tqdm(loader, desc="Encoding"):
         batch_x = batch_x.to(device, non_blocking=True)
-        codes = model.encode(batch_x)
+        amp_ctx = (
+            torch.amp.autocast("cuda", enabled=True)
+            if (device.type == "cuda" and use_amp)
+            else nullcontext()
+        )
+        with amp_ctx:
+            codes = model.encode(batch_x)
         all_codes.append(codes.cpu())
     return torch.cat(all_codes, dim=0).numpy()
 
@@ -372,7 +378,7 @@ def main():
         if os.path.exists(args.model_path):
             load_checkpoint(model, args.model_path, device)
 
-    codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device)
+    codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device, use_amp=args.amp)
     init_rate, _, init_max_dup = collision_stats(codes)
     print(f"[Codes] initial collision_rate={init_rate:.4f}, max_dup={init_max_dup}")
     if args.refine_collisions:
