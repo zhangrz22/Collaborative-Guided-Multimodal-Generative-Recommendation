@@ -291,7 +291,7 @@ def parse_args():
     p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--diversity_weight", type=float, default=0.01)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
-    p.add_argument("--cf_alpha", type=float, default=0.01)
+    p.add_argument("--cf_alpha", type=float, default=0.1)
     p.add_argument("--cf_warmup", type=int, default=50, help="Epochs of pure AE+VQ before CF loss")
     p.add_argument("--cf_ramp", type=int, default=50, help="Epochs to linearly ramp CF alpha from 0 to target")
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
