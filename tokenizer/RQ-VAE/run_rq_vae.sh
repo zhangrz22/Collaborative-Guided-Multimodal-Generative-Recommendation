@@ -13,6 +13,8 @@ E_DIM=${E_DIM:-32}
 ENCODER_DIMS=${ENCODER_DIMS:-"1024 512 256 128"}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
+EMA_DECAY=${EMA_DECAY:-0.99}
+DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
 SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
 SK_ITERS=${SK_ITERS:-50}
 KMEANS_ITERS=${KMEANS_ITERS:-50}
@@ -48,6 +50,8 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --encoder_dims ${ENCODER_DIMS} \
   --commitment_weight "${COMMITMENT_WEIGHT}" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
+  --ema_decay "${EMA_DECAY}" \
+  --dead_threshold "${DEAD_THRESHOLD}" \
   --sk_epsilons ${SK_EPSILONS} \
   --sk_iters "${SK_ITERS}" \
   --kmeans_iters "${KMEANS_ITERS}" \

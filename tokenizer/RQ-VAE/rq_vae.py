@@ -35,33 +35,64 @@ def sinkhorn(distances: torch.Tensor, epsilon: float, n_iters: int):
     return Q * B
 
 
-class VectorQuantizer(nn.Module):
+class VectorQuantizerEMA(nn.Module):
+    """EMA-updated codebook with dead code restart. No learnable embedding params."""
 
     def __init__(self, n_e: int, e_dim: int, commitment_weight: float = 0.25,
+                 ema_decay: float = 0.99, dead_threshold: float = 2.0,
                  sk_epsilon: float = 0.0, sk_iters: int = 50):
         super().__init__()
         self.n_e = n_e
         self.e_dim = e_dim
         self.commitment_weight = commitment_weight
+        self.ema_decay = ema_decay
+        self.dead_threshold = dead_threshold
         self.sk_epsilon = sk_epsilon
         self.sk_iters = sk_iters
-        self.embedding = nn.Embedding(n_e, e_dim)
-        self.embedding.weight.data.uniform_(-1.0 / n_e, 1.0 / n_e)
+
+        self.register_buffer("codebook", torch.randn(n_e, e_dim))
+        self.register_buffer("ema_count", torch.zeros(n_e))
+        self.register_buffer("ema_weight", self.codebook.clone())
 
     def _distances(self, x: torch.Tensor):
         return (
             (x ** 2).sum(1, keepdim=True)
-            + (self.embedding.weight ** 2).sum(1).unsqueeze(0)
-            - 2.0 * x @ self.embedding.weight.t()
+            + (self.codebook ** 2).sum(1).unsqueeze(0)
+            - 2.0 * x @ self.codebook.t()
         )
 
     @torch.no_grad()
     def init_codebook(self, x: torch.Tensor, n_iters: int = 50):
-        centers = kmeans_torch(x.detach(), self.n_e, n_iters=n_iters)
-        self.embedding.weight.copy_(centers)
+        centers = kmeans_torch(x.float(), self.n_e, n_iters=n_iters)
+        self.codebook.copy_(centers)
+        self.ema_weight.copy_(centers)
+        self.ema_count.fill_(1.0)
+
+    @torch.no_grad()
+    def _ema_update(self, x: torch.Tensor, indices: torch.Tensor):
+        x = x.float()
+        one_hot = F.one_hot(indices, self.n_e).float()
+        count = one_hot.sum(0)
+        weight_sum = one_hot.t() @ x
+
+        self.ema_count.mul_(self.ema_decay).add_(count, alpha=1 - self.ema_decay)
+        self.ema_weight.mul_(self.ema_decay).add_(weight_sum, alpha=1 - self.ema_decay)
+
+        # Dead code restart
+        dead = self.ema_count < self.dead_threshold
+        if dead.any():
+            n_dead = int(dead.sum().item())
+            rand_idx = torch.randint(0, x.shape[0], (n_dead,), device=x.device)
+            self.ema_weight[dead] = x[rand_idx]
+            self.ema_count[dead] = self.dead_threshold
+
+        n = self.ema_count.sum()
+        smoothed = (self.ema_count + 1e-5) / (n + self.n_e * 1e-5) * n
+        self.codebook.copy_(self.ema_weight / smoothed.unsqueeze(1))
 
     def forward(self, x: torch.Tensor, use_sk: bool = False):
         d = self._distances(x)
+
         if use_sk and self.sk_epsilon > 0 and x.shape[0] > 1:
             max_d, min_d = d.max(), d.min()
             centered = (d - (max_d + min_d) / 2) / ((max_d - min_d) / 2).clamp(min=1e-5)
@@ -69,12 +100,17 @@ class VectorQuantizer(nn.Module):
             indices = Q.argmax(dim=1).long()
         else:
             indices = d.argmin(dim=1)
-        x_q = self.embedding(indices)
 
-        commitment_loss = F.mse_loss(x_q.detach(), x)
-        codebook_loss = F.mse_loss(x_q, x.detach())
-        loss = codebook_loss + self.commitment_weight * commitment_loss
+        x_q = self.codebook[indices]
 
+        if self.training:
+            self._ema_update(x.detach(), indices.detach())
+
+        # Commitment loss only (codebook updated via EMA, not gradient)
+        commit_loss = F.mse_loss(x_q.detach(), x)
+        loss = self.commitment_weight * commit_loss
+
+        # Straight-through
         x_q = x + (x_q - x).detach()
         return x_q, loss, indices
 
@@ -82,14 +118,16 @@ class VectorQuantizer(nn.Module):
 class ResidualVQ(nn.Module):
 
     def __init__(self, n_e_list: list, e_dim: int, commitment_weight: float = 0.25,
+                 ema_decay: float = 0.99, dead_threshold: float = 2.0,
                  sk_epsilons: list = None, sk_iters: int = 50):
         super().__init__()
         n_layers = len(n_e_list)
         if sk_epsilons is None:
             sk_epsilons = [0.0] * n_layers
         self.vq_layers = nn.ModuleList([
-            VectorQuantizer(n_e, e_dim, commitment_weight=commitment_weight,
-                            sk_epsilon=eps, sk_iters=sk_iters)
+            VectorQuantizerEMA(n_e, e_dim, commitment_weight=commitment_weight,
+                               ema_decay=ema_decay, dead_threshold=dead_threshold,
+                               sk_epsilon=eps, sk_iters=sk_iters)
             for n_e, eps in zip(n_e_list, sk_epsilons)
         ])
 
@@ -98,8 +136,8 @@ class ResidualVQ(nn.Module):
         residual = z.clone()
         for vq in self.vq_layers:
             vq.init_codebook(residual, n_iters=n_iters)
-            x_q = vq.embedding(vq._distances(residual).argmin(dim=1))
-            residual = residual - x_q
+            indices = vq._distances(residual).argmin(dim=1)
+            residual = residual - vq.codebook[indices]
 
     def forward(self, z: torch.Tensor, use_sk: bool = False):
         residual = z
@@ -123,9 +161,9 @@ class ResidualVQ(nn.Module):
 class RQVAE(nn.Module):
 
     def __init__(self, in_dim: int, e_dim: int = 32,
-                 n_e_list: list = None,
-                 encoder_dims: list = None,
+                 n_e_list: list = None, encoder_dims: list = None,
                  commitment_weight: float = 0.25,
+                 ema_decay: float = 0.99, dead_threshold: float = 2.0,
                  sk_epsilons: list = None, sk_iters: int = 50,
                  quant_loss_weight: float = 1.0):
         super().__init__()
@@ -145,7 +183,7 @@ class RQVAE(nn.Module):
                 enc_layers.append(nn.ReLU())
         self.encoder = nn.Sequential(*enc_layers)
 
-        # Decoder: e_dim -> ... -> in_dim (mirror)
+        # Decoder: mirror
         dec_layers = []
         dims_rev = dims[::-1]
         for i in range(len(dims_rev) - 1):
@@ -157,6 +195,7 @@ class RQVAE(nn.Module):
         self.rq = ResidualVQ(
             n_e_list=n_e_list, e_dim=e_dim,
             commitment_weight=commitment_weight,
+            ema_decay=ema_decay, dead_threshold=dead_threshold,
             sk_epsilons=sk_epsilons, sk_iters=sk_iters,
         )
 

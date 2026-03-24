@@ -210,6 +210,8 @@ def parse_args():
     p.add_argument("--encoder_dims", type=int, nargs="+", default=[1024, 512, 256, 128])
     p.add_argument("--commitment_weight", type=float, default=0.25)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
+    p.add_argument("--ema_decay", type=float, default=0.99)
+    p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
     p.add_argument("--sk_iters", type=int, default=50)
     p.add_argument("--kmeans_iters", type=int, default=50)
@@ -242,6 +244,8 @@ def main():
         n_e_list=args.n_e_list,
         encoder_dims=args.encoder_dims,
         commitment_weight=args.commitment_weight,
+        ema_decay=args.ema_decay,
+        dead_threshold=args.dead_threshold,
         sk_epsilons=args.sk_epsilons,
         sk_iters=args.sk_iters,
         quant_loss_weight=args.quant_loss_weight,
