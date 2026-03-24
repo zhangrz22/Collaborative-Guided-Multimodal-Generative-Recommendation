@@ -6,11 +6,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_FILE=${INPUT_FILE:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/item_text_embeddings.parquet}
 OUTPUT_FILE=${OUTPUT_FILE:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/tiger_data/Beauty/item_LETTER_codes.parquet}
 MODEL_PATH=${MODEL_PATH:-/llm-reco-ssd-share/zhangrongzhou/Graduation_project/models/beauty_letter_rqvae.pth}
-CF_CKPT=${CF_CKPT:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/SASRec/ckpt/Beauty_best/SASRec_epoch14_hr0.0982.pth}
+CF_CKPT=${CF_CKPT:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/SASRec/ckpt/Beauty/SASRec_epoch20_hr0.0817.pth}
 
 # Model
 N_E_LIST=${N_E_LIST:-"256 256 256 256"}
-E_DIM=${E_DIM:-128}
+E_DIM=${E_DIM:-32}
 ENCODER_DIMS=${ENCODER_DIMS:-"1024 512 256 128"}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 EMA_DECAY=${EMA_DECAY:-0.99}
@@ -26,7 +26,7 @@ KMEANS_ITERS=${KMEANS_ITERS:-100}
 N_CLUSTERS=${N_CLUSTERS:-10}
 
 # Training
-EPOCHS=${EPOCHS:-2000}
+EPOCHS=${EPOCHS:-400}
 BATCH_SIZE=${BATCH_SIZE:-1024}
 LR=${LR:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-4}
