@@ -295,10 +295,12 @@ class RQVAE(nn.Module):
         recon_loss = F.mse_loss(x_rec, x)
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
-        # CF contrastive loss (InfoNCE, raw dot product)
+        # CF contrastive loss (InfoNCE, L2-normalize + temperature for gradient signal)
         cf_loss = torch.zeros((), device=x.device)
         if cf_emb is not None and self.cf_alpha > 0:
-            sim = z_q_st @ cf_emb.t()
+            z_norm = F.normalize(z_q_st, dim=-1)
+            cf_norm = F.normalize(cf_emb, dim=-1)
+            sim = z_norm @ cf_norm.t() / 0.5
             labels = torch.arange(sim.shape[0], device=sim.device)
             cf_loss = F.cross_entropy(sim, labels)
             loss = loss + self.cf_alpha * cf_loss
