@@ -17,8 +17,10 @@ EMA_DECAY=${EMA_DECAY:-0.99}
 DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
 DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.01}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
-CF_ALPHA=${CF_ALPHA:-0.1}
+CF_ALPHA=${CF_ALPHA:-0.02}
 CF_DIM=${CF_DIM:-128}
+CF_WARMUP=${CF_WARMUP:-50}
+CF_RAMP=${CF_RAMP:-50}
 SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
 SK_ITERS=${SK_ITERS:-50}
 KMEANS_ITERS=${KMEANS_ITERS:-50}
@@ -45,7 +47,8 @@ echo "  output=${OUTPUT_FILE}"
 echo "  model=${MODEL_PATH}"
 echo "  cf_ckpt=${CF_CKPT}"
 echo "  n_e_list=${N_E_LIST}, e_dim=${E_DIM}, encoder_dims=${ENCODER_DIMS}"
-echo "  cf_alpha=${CF_ALPHA}, diversity_weight=${DIVERSITY_WEIGHT}, n_clusters=${N_CLUSTERS}"
+echo "  cf_alpha=${CF_ALPHA}, cf_warmup=${CF_WARMUP}, cf_ramp=${CF_RAMP}"
+echo "  diversity_weight=${DIVERSITY_WEIGHT}, n_clusters=${N_CLUSTERS}"
 echo "  epochs=${EPOCHS}, batch=${BATCH_SIZE}, lr=${LR}"
 
 nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
@@ -63,6 +66,8 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
   --cf_alpha "${CF_ALPHA}" \
   --cf_dim "${CF_DIM}" \
+  --cf_warmup "${CF_WARMUP}" \
+  --cf_ramp "${CF_RAMP}" \
   --sk_epsilons ${SK_EPSILONS} \
   --sk_iters "${SK_ITERS}" \
   --kmeans_iters "${KMEANS_ITERS}" \

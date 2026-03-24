@@ -147,7 +147,6 @@ def compute_cluster_labels(model, n_clusters=10):
 
 def train(model, emb, cf_emb, args, device):
     n_items = len(emb)
-    indices = np.arange(n_items)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
@@ -160,10 +159,23 @@ def train(model, emb, cf_emb, args, device):
     print("KMeans init done.")
 
     cf_tensor = torch.from_numpy(cf_emb).to(device)
+    target_cf_alpha = model.cf_alpha
+
+    print(f"CF warmup: epochs 1~{args.cf_warmup} pure AE+VQ, "
+          f"then ramp CF alpha 0→{target_cf_alpha} over epochs {args.cf_warmup+1}~{args.cf_warmup + args.cf_ramp}")
 
     best_loss = float("inf")
     for epoch in range(1, args.epochs + 1):
         model.train()
+
+        # CF alpha schedule: warmup -> linear ramp -> full
+        if epoch <= args.cf_warmup:
+            model.cf_alpha = 0.0
+        elif epoch <= args.cf_warmup + args.cf_ramp:
+            progress = (epoch - args.cf_warmup) / args.cf_ramp
+            model.cf_alpha = target_cf_alpha * progress
+        else:
+            model.cf_alpha = target_cf_alpha
 
         # Re-cluster codebook each epoch for diversity loss
         cluster_labels_list = compute_cluster_labels(model, n_clusters=args.n_clusters)
@@ -174,11 +186,14 @@ def train(model, emb, cf_emb, args, device):
         n = 0
         code_counts = torch.zeros(len(args.n_e_list), max(args.n_e_list), dtype=torch.long)
 
+        # Only pass CF embeddings after warmup
+        use_cf = model.cf_alpha > 0
+
         n_batches = (n_items + args.batch_size - 1) // args.batch_size
         for bi in tqdm(range(n_batches), desc=f"Epoch {epoch}/{args.epochs}"):
             batch_idx = perm[bi * args.batch_size: (bi + 1) * args.batch_size]
             batch_x = torch.from_numpy(emb[batch_idx]).to(device, non_blocking=True)
-            batch_cf = cf_tensor[batch_idx]
+            batch_cf = cf_tensor[batch_idx] if use_cf else None
 
             optimizer.zero_grad(set_to_none=True)
             out = model(batch_x, cf_emb=batch_cf, cluster_labels_list=cluster_labels_list)
@@ -210,15 +225,17 @@ def train(model, emb, cf_emb, args, device):
             usage_parts.append(f"L{layer}:{used}/{args.n_e_list[layer]}(ppl={ppl:.0f})")
 
         epoch_loss = total_loss / n
+        cf_alpha_str = f" cf_alpha={model.cf_alpha:.4f}" if use_cf else " cf=OFF"
         print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={total_recon/n:.6f} "
-              f"vq={total_vq/n:.6f} cf={total_cf/n:.6f} | {' '.join(usage_parts)}")
+              f"vq={total_vq/n:.6f} cf={total_cf/n:.6f}{cf_alpha_str} | {' '.join(usage_parts)}")
 
         if epoch_loss < best_loss:
             best_loss = epoch_loss
             save_checkpoint(model, args.model_path, args)
             print(f"  -> saved (loss={epoch_loss:.6f})")
 
-    # Reload best
+    # Restore and reload best
+    model.cf_alpha = target_cf_alpha
     load_checkpoint(model, args.model_path, device)
 
 
@@ -274,8 +291,10 @@ def parse_args():
     p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--diversity_weight", type=float, default=0.01)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
-    p.add_argument("--cf_alpha", type=float, default=0.1)
+    p.add_argument("--cf_alpha", type=float, default=0.02)
     p.add_argument("--cf_dim", type=int, default=128)
+    p.add_argument("--cf_warmup", type=int, default=50, help="Epochs of pure AE+VQ before CF loss")
+    p.add_argument("--cf_ramp", type=int, default=50, help="Epochs to linearly ramp CF alpha from 0 to target")
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
     p.add_argument("--sk_iters", type=int, default=50)
     p.add_argument("--kmeans_iters", type=int, default=50)
