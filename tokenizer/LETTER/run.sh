@@ -13,7 +13,9 @@ N_E_LIST=${N_E_LIST:-"256 256 256 256"}
 E_DIM=${E_DIM:-32}
 ENCODER_DIMS=${ENCODER_DIMS:-"1024 512 256 128"}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
-DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.1}
+EMA_DECAY=${EMA_DECAY:-0.99}
+DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
+DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.01}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
 CF_ALPHA=${CF_ALPHA:-0.1}
 CF_DIM=${CF_DIM:-128}
@@ -55,6 +57,8 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --e_dim "${E_DIM}" \
   --encoder_dims ${ENCODER_DIMS} \
   --commitment_weight "${COMMITMENT_WEIGHT}" \
+  --ema_decay "${EMA_DECAY}" \
+  --dead_threshold "${DEAD_THRESHOLD}" \
   --diversity_weight "${DIVERSITY_WEIGHT}" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
   --cf_alpha "${CF_ALPHA}" \

@@ -135,7 +135,7 @@ def compute_cluster_labels(model, n_clusters=10):
     """Run constrained KMeans on each VQ layer's codebook. Returns list of label lists."""
     cluster_labels_list = []
     for vq in model.rq.vq_layers:
-        w = vq.embedding.weight.detach().cpu().numpy()
+        w = vq.codebook.detach().cpu().numpy()
         _, labels = constrained_km(w, n_clusters=n_clusters)
         cluster_labels_list.append(labels)
     return cluster_labels_list
@@ -270,7 +270,9 @@ def parse_args():
     p.add_argument("--e_dim", type=int, default=32)
     p.add_argument("--encoder_dims", type=int, nargs="+", default=[1024, 512, 256, 128])
     p.add_argument("--commitment_weight", type=float, default=0.25)
-    p.add_argument("--diversity_weight", type=float, default=0.1)
+    p.add_argument("--ema_decay", type=float, default=0.99)
+    p.add_argument("--dead_threshold", type=float, default=2.0)
+    p.add_argument("--diversity_weight", type=float, default=0.01)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
     p.add_argument("--cf_alpha", type=float, default=0.1)
     p.add_argument("--cf_dim", type=int, default=128)
@@ -308,6 +310,8 @@ def main():
         n_e_list=args.n_e_list,
         encoder_dims=args.encoder_dims,
         commitment_weight=args.commitment_weight,
+        ema_decay=args.ema_decay,
+        dead_threshold=args.dead_threshold,
         diversity_weight=args.diversity_weight,
         sk_epsilons=args.sk_epsilons,
         sk_iters=args.sk_iters,
