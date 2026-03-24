@@ -286,18 +286,18 @@ def parse_args():
     # Model
     p.add_argument("--n_e_list", type=int, nargs="+", default=[256, 256, 256, 256])
     p.add_argument("--e_dim", type=int, default=32)
-    p.add_argument("--encoder_dims", type=int, nargs="+", default=[1024, 512, 256, 128])
+    p.add_argument("--encoder_dims", type=int, nargs="+", default=[2048, 1024, 512, 256, 128, 64])
     p.add_argument("--commitment_weight", type=float, default=0.25)
     p.add_argument("--ema_decay", type=float, default=0.99)
     p.add_argument("--dead_threshold", type=float, default=2.0)
-    p.add_argument("--diversity_weight", type=float, default=0.01)
+    p.add_argument("--diversity_weight", type=float, default=0.0001)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
-    p.add_argument("--cf_alpha", type=float, default=0.1)
+    p.add_argument("--cf_alpha", type=float, default=0.01)
     p.add_argument("--cf_warmup", type=int, default=50, help="Epochs of pure AE+VQ before CF loss")
     p.add_argument("--cf_ramp", type=int, default=50, help="Epochs to linearly ramp CF alpha from 0 to target")
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
     p.add_argument("--sk_iters", type=int, default=50)
-    p.add_argument("--kmeans_iters", type=int, default=50)
+    p.add_argument("--kmeans_iters", type=int, default=100)
     p.add_argument("--n_clusters", type=int, default=10, help="KMeans clusters for diversity loss")
 
     # Training
