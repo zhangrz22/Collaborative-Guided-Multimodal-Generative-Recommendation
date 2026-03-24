@@ -177,6 +177,10 @@ def train(model, emb, cf_emb, args, device):
         else:
             model.cf_alpha = target_cf_alpha
 
+        # Reset best_loss when CF loss first kicks in
+        if epoch == args.cf_warmup + 1:
+            best_loss = float("inf")
+
         # Re-cluster codebook each epoch for diversity loss
         cluster_labels_list = compute_cluster_labels(model, n_clusters=args.n_clusters)
 
@@ -306,6 +310,7 @@ def parse_args():
     p.add_argument("--weight_decay", type=float, default=1e-4)
     p.add_argument("--num_workers", type=int, default=4)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--device", type=str, default="cuda:0", help="Device to use, e.g. cuda:0, cuda:1, cpu")
 
     # Refine
     p.add_argument("--max_refine_rounds", type=int, default=5)
@@ -321,7 +326,8 @@ def main():
     item_ids, emb = load_parquet(args.input_file)
     cf_emb = load_cf_embeddings(args.cf_ckpt, item_ids)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(args.device)
+    print(f"Using device: {device}")
     model = RQVAE(
         in_dim=emb.shape[1],
         e_dim=args.e_dim,

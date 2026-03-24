@@ -26,12 +26,13 @@ KMEANS_ITERS=${KMEANS_ITERS:-50}
 N_CLUSTERS=${N_CLUSTERS:-10}
 
 # Training
-EPOCHS=${EPOCHS:-200}
+EPOCHS=${EPOCHS:-2000}
 BATCH_SIZE=${BATCH_SIZE:-1024}
 LR=${LR:-1e-3}
 WEIGHT_DECAY=${WEIGHT_DECAY:-1e-4}
 NUM_WORKERS=${NUM_WORKERS:-4}
 SEED=${SEED:-42}
+DEVICE=${DEVICE:-cuda:0}
 
 # Refine
 MAX_REFINE_ROUNDS=${MAX_REFINE_ROUNDS:-5}
@@ -76,6 +77,7 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --weight_decay "${WEIGHT_DECAY}" \
   --num_workers "${NUM_WORKERS}" \
   --seed "${SEED}" \
+  --device "${DEVICE}" \
   --max_refine_rounds "${MAX_REFINE_ROUNDS}" \
   --target_collision_rate "${TARGET_COLLISION_RATE}" \
   > "${LOG_FILE}" 2>&1 &
