@@ -36,13 +36,13 @@ def load_parquet(path: str):
 def load_cf_embeddings(ckpt_path: str, item_ids):
     """Load SASRec item embeddings and align with parquet item_ids.
 
-    SASRec checkpoint stores item_emb.weight of shape [item_num+1, 128].
+    SASRec checkpoint stores item_emb.weight of shape [item_num+1, e_dim].
     Row 0 is padding, so item i's embedding is at row i.
     """
     print(f"Loading CF embeddings: {ckpt_path}")
     ckpt = torch.load(ckpt_path, map_location="cpu")
     sd = ckpt if isinstance(ckpt, dict) and "item_emb.weight" in ckpt else ckpt.get("state_dict", ckpt)
-    emb_weight = sd["item_emb.weight"]  # [item_num+1, 128]
+    emb_weight = sd["item_emb.weight"]  # [item_num+1, e_dim]
     print(f"  SASRec item_emb shape: {emb_weight.shape}")
 
     # Build lookup: item_id -> row index in SASRec (item_id == row index)
@@ -291,8 +291,7 @@ def parse_args():
     p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--diversity_weight", type=float, default=0.01)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
-    p.add_argument("--cf_alpha", type=float, default=0.02)
-    p.add_argument("--cf_dim", type=int, default=128)
+    p.add_argument("--cf_alpha", type=float, default=0.01)
     p.add_argument("--cf_warmup", type=int, default=50, help="Epochs of pure AE+VQ before CF loss")
     p.add_argument("--cf_ramp", type=int, default=50, help="Epochs to linearly ramp CF alpha from 0 to target")
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
@@ -335,7 +334,6 @@ def main():
         sk_epsilons=args.sk_epsilons,
         sk_iters=args.sk_iters,
         quant_loss_weight=args.quant_loss_weight,
-        cf_dim=args.cf_dim,
         cf_alpha=args.cf_alpha,
     ).to(device)
 

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INPUT_FILE=${INPUT_FILE:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/item_text_embeddings.parquet}
 OUTPUT_FILE=${OUTPUT_FILE:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/data/tiger_data/Beauty/item_LETTER_codes.parquet}
 MODEL_PATH=${MODEL_PATH:-/llm-reco-ssd-share/zhangrongzhou/Graduation_project/models/beauty_letter_rqvae.pth}
-CF_CKPT=${CF_CKPT:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/SASRec/ckpt/Beauty/SASRec_epoch14_hr0.0982.pth}
+CF_CKPT=${CF_CKPT:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/SASRec/ckpt/Beauty/SASRec_epoch20_hr0.0817.pth}
 
 # Model
 N_E_LIST=${N_E_LIST:-"256 256 256 256"}
@@ -17,8 +17,7 @@ EMA_DECAY=${EMA_DECAY:-0.99}
 DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
 DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.01}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
-CF_ALPHA=${CF_ALPHA:-0.02}
-CF_DIM=${CF_DIM:-128}
+CF_ALPHA=${CF_ALPHA:-0.01}
 CF_WARMUP=${CF_WARMUP:-50}
 CF_RAMP=${CF_RAMP:-50}
 SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
@@ -65,7 +64,6 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --diversity_weight "${DIVERSITY_WEIGHT}" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
   --cf_alpha "${CF_ALPHA}" \
-  --cf_dim "${CF_DIM}" \
   --cf_warmup "${CF_WARMUP}" \
   --cf_ramp "${CF_RAMP}" \
   --sk_epsilons ${SK_EPSILONS} \

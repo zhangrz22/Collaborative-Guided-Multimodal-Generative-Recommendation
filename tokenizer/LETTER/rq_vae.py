@@ -250,7 +250,7 @@ class RQVAE(nn.Module):
                  diversity_weight=0.01,
                  sk_epsilons=None, sk_iters=50,
                  quant_loss_weight=1.0,
-                 cf_dim=128, cf_alpha=0.1):
+                 cf_alpha=0.1):
         super().__init__()
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
@@ -286,13 +286,6 @@ class RQVAE(nn.Module):
             sk_epsilons=sk_epsilons, sk_iters=sk_iters,
         )
 
-        # CF projection: e_dim -> cf_dim
-        self.cf_proj = nn.Sequential(
-            nn.Linear(e_dim, cf_dim),
-            nn.ReLU(),
-            nn.Linear(cf_dim, cf_dim),
-        )
-
     def forward(self, x, cf_emb=None, cluster_labels_list=None):
         z = self.encoder(x)
         z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list)
@@ -302,12 +295,10 @@ class RQVAE(nn.Module):
         recon_loss = F.mse_loss(x_rec, x)
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
-        # CF contrastive loss (InfoNCE)
+        # CF contrastive loss (InfoNCE, raw dot product like original LETTER)
         cf_loss = torch.zeros((), device=x.device)
         if cf_emb is not None and self.cf_alpha > 0:
-            z_q_proj = F.normalize(self.cf_proj(z_q_st), dim=-1)
-            cf_target = F.normalize(cf_emb, dim=-1)
-            sim = z_q_proj @ cf_target.t() / 0.07  # temperature
+            sim = z_q_st @ cf_emb.t()
             labels = torch.arange(sim.shape[0], device=sim.device)
             cf_loss = F.cross_entropy(sim, labels)
             loss = loss + self.cf_alpha * cf_loss
