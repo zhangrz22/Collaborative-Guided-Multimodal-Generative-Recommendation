@@ -2,20 +2,13 @@
 """
 RQ-VAE tokenizer for item embeddings in parquet.
 
-Input parquet columns:
-- item_id
-- embedding (list/array)
-
-Output parquet columns:
-- item_id
-- code (list of RQ layer indices)
+Input:  parquet with columns [item_id, embedding]
+Output: parquet with columns [item_id, code]
 """
 
 import argparse
 import os
-from typing import Tuple
 from collections import defaultdict
-from contextlib import nullcontext
 
 import numpy as np
 import pandas as pd
@@ -26,334 +19,213 @@ from tqdm import tqdm
 from rq_vae import RQVAE
 
 
-def load_parquet_embeddings(file_path: str) -> Tuple[np.ndarray, np.ndarray]:
-    print(f"Loading parquet: {file_path}")
-    df = pd.read_parquet(file_path)
-    required_cols = {"item_id", "embedding"}
-    if not required_cols.issubset(df.columns):
-        raise ValueError(f"Missing columns: {required_cols - set(df.columns)}")
+# ---------------------------------------------------------------------------
+# Data I/O
+# ---------------------------------------------------------------------------
 
-    item_ids = df["item_id"].to_numpy()
-    embeddings = np.asarray(df["embedding"].tolist(), dtype=np.float32)
-    print(f"Rows: {len(item_ids)}, Embedding shape: {embeddings.shape}")
-    return item_ids, embeddings
-
-
-def build_model(args, input_dim: int, device: torch.device):
-    model = RQVAE(
-        input_dim=input_dim,
-        hidden_dim=args.hidden_dim,
-        latent_dim=args.latent_dim,
-        num_layers=args.n_layers,
-        codebook_size=args.codebook_size,
-        commitment_weight=args.commitment_weight,
-        kl_weight=args.kl_weight,
-        balance_weight=args.balance_weight,
-        entropy_temp=args.entropy_temp,
-        ema=args.ema,
-        ema_decay=args.ema_decay,
-        restart_unused_codes=args.restart_unused_codes,
-        dead_code_threshold=args.dead_code_threshold,
-    ).to(device)
-    return model
+def load_parquet(path: str):
+    print(f"Loading: {path}")
+    df = pd.read_parquet(path)
+    ids = df["item_id"].to_numpy()
+    emb = np.asarray(df["embedding"].tolist(), dtype=np.float32)
+    print(f"  items={len(ids)}, dim={emb.shape[1]}")
+    return ids, emb
 
 
-def summarize_code_usage(counts: torch.Tensor):
-    """
-    counts: [n_layers, codebook_size]
-    """
-    out = []
-    for layer in range(counts.shape[0]):
-        c = counts[layer]
-        used = int((c > 0).sum().item())
-        usage = used / float(c.shape[0])
-        probs = c.float() / max(float(c.sum().item()), 1.0)
-        nz = probs[probs > 0]
-        perplexity = torch.exp(-(nz * torch.log(nz)).sum()).item() if nz.numel() > 0 else 0.0
-        out.append((usage, perplexity, used))
-    return out
-
-
-def train_model(model: RQVAE, emb: np.ndarray, args, device: torch.device):
-    x = torch.from_numpy(emb)
-    loader = DataLoader(
-        TensorDataset(x),
-        batch_size=args.batch_size,
-        shuffle=True,
-        num_workers=args.num_workers,
-        pin_memory=(device.type == "cuda"),
-        drop_last=False,
-    )
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr * 0.01)
-
-    if args.kmeans_init:
-        print(f"Running residual kmeans init, iters={args.kmeans_iters} ...")
-        init_x = x.to(device, non_blocking=True)
-        with torch.no_grad():
-            mu, _ = model.encode_to_latent(init_x)
-            model.rq.init_codebooks_kmeans(mu, n_iters=args.kmeans_iters)
-        print("Kmeans init done.")
-
-    scaler = torch.amp.GradScaler("cuda", enabled=(device.type == "cuda" and args.amp))
-    for epoch in range(1, args.epochs + 1):
-        model.train()
-        stats = {"loss": 0.0, "recon": 0.0, "vq": 0.0, "commit": 0.0, "kl": 0.0, "balance": 0.0}
-        count = 0
-        code_counts = torch.zeros(
-            (args.n_layers, args.codebook_size), dtype=torch.long, device="cpu"
-        )
-
-        for (batch_x,) in tqdm(loader, desc=f"Epoch {epoch}/{args.epochs}"):
-            batch_x = batch_x.to(device, non_blocking=True)
-            optimizer.zero_grad(set_to_none=True)
-
-            amp_ctx = (
-                torch.amp.autocast("cuda", enabled=True)
-                if (device.type == "cuda" and args.amp)
-                else nullcontext()
-            )
-            with amp_ctx:
-                out = model(batch_x)
-                loss = out["loss"]
-
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimizer)
-            scaler.update()
-
-            bs = batch_x.shape[0]
-            count += bs
-            stats["loss"] += out["loss"].item() * bs
-            stats["recon"] += out["recon_loss"].item() * bs
-            stats["vq"] += out["codebook_loss"].item() * bs
-            stats["commit"] += out["commit_loss"].item() * bs
-            stats["kl"] += out["kl_loss"].item() * bs
-            stats["balance"] += out["balance_loss"].item() * bs
-
-            codes = out["codes"].detach().cpu()
-            for layer in range(codes.shape[1]):
-                binc = torch.bincount(codes[:, layer], minlength=args.codebook_size)
-                code_counts[layer] += binc
-
-        scheduler.step()
-
-        epoch_loss = stats["loss"] / count
-        usage = summarize_code_usage(code_counts)
-        usage_str = " ".join(
-            [
-                f"L{i}:used={used}/{args.codebook_size}({u*100:.1f}%),ppl={ppl:.1f}"
-                for i, (u, ppl, used) in enumerate(usage)
-            ]
-        )
-        current_lr = optimizer.param_groups[0]["lr"]
-        print(
-            f"[Epoch {epoch}] "
-            f"loss={epoch_loss:.6f} "
-            f"recon={stats['recon']/count:.6f} "
-            f"vq={stats['vq']/count:.6f} "
-            f"commit={stats['commit']/count:.6f} "
-            f"kl={stats['kl']/count:.6f} "
-            f"balance={stats['balance']/count:.6f} "
-            f"lr={current_lr:.2e} "
-            f"| {usage_str}"
-        )
-
-
-@torch.no_grad()
-def encode_embeddings(model: RQVAE, emb: np.ndarray, batch_size: int, device: torch.device, use_amp: bool = False):
-    x = torch.from_numpy(emb)
-    loader = DataLoader(
-        TensorDataset(x),
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=(device.type == "cuda"),
-        drop_last=False,
-    )
-    all_codes = []
-    model.eval()
-    for (batch_x,) in tqdm(loader, desc="Encoding"):
-        batch_x = batch_x.to(device, non_blocking=True)
-        amp_ctx = (
-            torch.amp.autocast("cuda", enabled=True)
-            if (device.type == "cuda" and use_amp)
-            else nullcontext()
-        )
-        with amp_ctx:
-            codes = model.encode(batch_x)
-        all_codes.append(codes.cpu())
-    return torch.cat(all_codes, dim=0).numpy()
-
-
-def save_codes(item_ids: np.ndarray, codes: np.ndarray, output_file: str):
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    df = pd.DataFrame(
-        {
-            "item_id": item_ids,
-            "code": [code.tolist() for code in codes],
-        }
-    )
-    df.to_parquet(output_file, engine="pyarrow", compression="snappy")
-    print(f"Saved codes: {output_file}")
+def save_codes(item_ids, codes, path):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    df = pd.DataFrame({
+        "item_id": item_ids,
+        "code": [c.tolist() for c in codes],
+    })
+    df.to_parquet(path, engine="pyarrow", compression="snappy")
+    print(f"Saved: {path}")
     print(df.head())
 
 
-def collision_stats(codes: np.ndarray):
-    tuples = [tuple(c.tolist()) for c in codes]
+# ---------------------------------------------------------------------------
+# Collision helpers
+# ---------------------------------------------------------------------------
+
+def collision_stats(codes):
     groups = defaultdict(list)
-    for i, key in enumerate(tuples):
-        groups[key].append(i)
-    collision_groups = [idxs for idxs in groups.values() if len(idxs) > 1]
+    for i, c in enumerate(codes):
+        groups[tuple(c.tolist())].append(i)
     n = len(codes)
     uniq = len(groups)
+    collision_groups = [g for g in groups.values() if len(g) > 1]
     rate = (n - uniq) / max(n, 1)
-    max_dup = max((len(v) for v in groups.values()), default=1)
+    max_dup = max((len(g) for g in groups.values()), default=1)
     return rate, collision_groups, max_dup
 
 
 @torch.no_grad()
-def refine_collisions(
-    model: RQVAE,
-    emb: np.ndarray,
-    codes: np.ndarray,
-    args,
-    device: torch.device,
-):
+def refine_collisions(model, emb, codes, device, max_rounds=20, target_rate=0.0):
     best_codes = codes.copy()
-    best_rate, _, best_max_dup = collision_stats(best_codes)
-    print(
-        f"[Refine] initial collision_rate={best_rate:.4f}, max_dup={best_max_dup}, "
-        f"target={args.target_collision_rate:.4f}"
-    )
+    best_rate, _, best_max = collision_stats(best_codes)
+    print(f"[Refine] initial collision_rate={best_rate:.4f}, max_dup={best_max}")
 
-    if best_rate <= args.target_collision_rate:
-        return best_codes
+    # Enable Sinkhorn on last layer only (like LETTER)
+    for vq in model.rq.vq_layers[:-1]:
+        vq.sk_epsilon = 0.0
+    if model.rq.vq_layers[-1].sk_epsilon == 0.0:
+        model.rq.vq_layers[-1].sk_epsilon = 0.003
 
-    for round_idx in range(1, args.max_refine_rounds + 1):
+    for r in range(1, max_rounds + 1):
         rate, collision_groups, max_dup = collision_stats(codes)
-        print(
-            f"[Refine] round={round_idx} before: collision_rate={rate:.4f}, "
-            f"groups={len(collision_groups)}, max_dup={max_dup}"
-        )
-        if rate <= args.target_collision_rate or not collision_groups:
+        if rate <= target_rate or not collision_groups:
             break
+        print(f"[Refine] round={r} collision_rate={rate:.4f}, groups={len(collision_groups)}, max_dup={max_dup}")
 
-        collision_indices = sorted({i for group in collision_groups for i in group})
-        if not collision_indices:
-            break
-        group_tensor = torch.from_numpy(emb[np.asarray(collision_indices)]).to(device, non_blocking=True)
-        new_codes = model.encode(
-            group_tensor,
-            use_sk=True,
-            sk_epsilon=args.refine_sk_epsilon,
-            sk_iters=args.refine_sk_iters,
-        ).cpu().numpy()
-        for j, idx in enumerate(collision_indices):
-            codes[idx] = new_codes[j]
+        for group in collision_groups:
+            t = torch.from_numpy(emb[np.array(group)]).to(device)
+            new_codes = model.encode(t, use_sk=True).cpu().numpy()
+            for j, idx in enumerate(group):
+                codes[idx] = new_codes[j]
 
-        new_rate, _, new_max_dup = collision_stats(codes)
-        print(
-            f"[Refine] round={round_idx} after : collision_rate={new_rate:.4f}, "
-            f"max_dup={new_max_dup}"
-        )
+        new_rate, _, new_max = collision_stats(codes)
         if new_rate < best_rate:
             best_rate = new_rate
-            best_max_dup = new_max_dup
+            best_max = new_max
             best_codes = codes.copy()
-            print(f"[Refine] new best collision_rate={best_rate:.4f}")
-        if best_rate <= args.target_collision_rate:
+        if best_rate <= target_rate:
             break
 
-    print(
-        f"[Refine] best collision_rate={best_rate:.4f}, best_max_dup={best_max_dup}"
-    )
+    print(f"[Refine] final collision_rate={best_rate:.4f}, max_dup={best_max}")
     return best_codes
 
 
-def save_checkpoint(model: RQVAE, path: str, args):
+# ---------------------------------------------------------------------------
+# Train / Encode
+# ---------------------------------------------------------------------------
+
+def train(model, emb, args, device):
+    loader = DataLoader(
+        TensorDataset(torch.from_numpy(emb)),
+        batch_size=args.batch_size, shuffle=True,
+        num_workers=args.num_workers, pin_memory=(device.type == "cuda"),
+    )
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
+    # KMeans init
+    print("Running KMeans init ...")
+    model.eval()
+    with torch.no_grad():
+        model.init_codebooks(torch.from_numpy(emb).to(device), n_iters=args.kmeans_iters)
+    print("KMeans init done.")
+
+    best_loss = float("inf")
+    for epoch in range(1, args.epochs + 1):
+        model.train()
+        total_loss = total_recon = total_vq = 0.0
+        n = 0
+        code_counts = torch.zeros(len(args.n_e_list), max(args.n_e_list), dtype=torch.long)
+
+        for (batch_x,) in tqdm(loader, desc=f"Epoch {epoch}/{args.epochs}"):
+            batch_x = batch_x.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
+            out = model(batch_x)
+            out["loss"].backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+
+            bs = batch_x.shape[0]
+            n += bs
+            total_loss += out["loss"].item() * bs
+            total_recon += out["recon_loss"].item() * bs
+            total_vq += out["quant_loss"].item() * bs
+
+            codes = out["codes"].detach().cpu()
+            for layer in range(codes.shape[1]):
+                code_counts[layer] += torch.bincount(codes[:, layer], minlength=args.n_e_list[layer]).cpu()
+
+        # Per-layer usage
+        usage_parts = []
+        for layer in range(len(args.n_e_list)):
+            c = code_counts[layer, :args.n_e_list[layer]]
+            used = int((c > 0).sum().item())
+            probs = c.float() / c.sum().clamp(min=1)
+            nz = probs[probs > 0]
+            ppl = torch.exp(-(nz * nz.log()).sum()).item() if nz.numel() > 0 else 0
+            usage_parts.append(f"L{layer}:{used}/{args.n_e_list[layer]}(ppl={ppl:.0f})")
+
+        epoch_loss = total_loss / n
+        print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={total_recon/n:.6f} "
+              f"vq={total_vq/n:.6f} | {' '.join(usage_parts)}")
+
+        if epoch_loss < best_loss:
+            best_loss = epoch_loss
+            save_checkpoint(model, args.model_path, args)
+            print(f"  -> saved (loss={epoch_loss:.6f})")
+
+    # Reload best
+    load_checkpoint(model, args.model_path, device)
+
+
+@torch.no_grad()
+def encode_all(model, emb, batch_size, device):
+    loader = DataLoader(
+        TensorDataset(torch.from_numpy(emb)),
+        batch_size=batch_size, shuffle=False, num_workers=0,
+        pin_memory=(device.type == "cuda"),
+    )
+    model.eval()
+    all_codes = []
+    for (batch_x,) in tqdm(loader, desc="Encoding"):
+        batch_x = batch_x.to(device, non_blocking=True)
+        all_codes.append(model.encode(batch_x).cpu())
+    return torch.cat(all_codes, dim=0).numpy()
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint
+# ---------------------------------------------------------------------------
+
+def save_checkpoint(model, path, args):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    ckpt = {
-        "state_dict": model.state_dict(),
-        "config": {
-            "hidden_dim": args.hidden_dim,
-            "latent_dim": args.latent_dim,
-            "n_layers": args.n_layers,
-            "codebook_size": args.codebook_size,
-            "commitment_weight": args.commitment_weight,
-            "kl_weight": args.kl_weight,
-            "balance_weight": args.balance_weight,
-            "entropy_temp": args.entropy_temp,
-            "ema": args.ema,
-            "ema_decay": args.ema_decay,
-            "restart_unused_codes": args.restart_unused_codes,
-            "dead_code_threshold": args.dead_code_threshold,
-            "kmeans_init": args.kmeans_init,
-            "kmeans_iters": args.kmeans_iters,
-            "refine_collisions": args.refine_collisions,
-            "max_refine_rounds": args.max_refine_rounds,
-            "target_collision_rate": args.target_collision_rate,
-            "refine_sk_epsilon": args.refine_sk_epsilon,
-            "refine_sk_iters": args.refine_sk_iters,
-        },
-    }
-    torch.save(ckpt, path)
-    print(f"Saved model: {path}")
+    torch.save({"state_dict": model.state_dict(), "args": vars(args)}, path)
 
 
-def load_checkpoint(model: RQVAE, path: str, device: torch.device):
+def load_checkpoint(model, path, device):
     ckpt = torch.load(path, map_location=device)
-    state_dict = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
-    if missing:
-        print(f"Missing keys when loading checkpoint: {len(missing)}")
-    if unexpected:
-        print(f"Unexpected keys when loading checkpoint: {len(unexpected)}")
-    print(f"Loaded model: {path}")
+    sd = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
+    model.load_state_dict(sd, strict=False)
+    print(f"Loaded: {path}")
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="RQ-VAE tokenizer for item embeddings")
-    parser.add_argument("--input_file", required=True, help="Input parquet file")
-    parser.add_argument("--output_file", required=True, help="Output parquet with item_id/code")
-    parser.add_argument("--model_path", required=True, help="Model checkpoint path")
-    parser.add_argument("--load_model", action="store_true", help="Load model instead of training")
+    p = argparse.ArgumentParser()
+    p.add_argument("--input_file", required=True)
+    p.add_argument("--output_file", required=True)
+    p.add_argument("--model_path", required=True)
+    p.add_argument("--load_model", action="store_true")
 
-    parser.add_argument("--n_layers", type=int, default=4)
-    parser.add_argument("--codebook_size", type=int, default=256)
-    parser.add_argument("--hidden_dim", type=int, default=1024)
-    parser.add_argument("--latent_dim", type=int, default=256)
-    parser.add_argument("--commitment_weight", type=float, default=0.25)
-    parser.add_argument("--kl_weight", type=float, default=0.0)
-    parser.add_argument("--balance_weight", type=float, default=0.1)
-    parser.add_argument("--entropy_temp", type=float, default=0.5)
-    parser.add_argument("--ema", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--ema_decay", type=float, default=0.95)
-    parser.add_argument("--restart_unused_codes", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--dead_code_threshold", type=float, default=10.0)
-    parser.add_argument("--kmeans_init", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--kmeans_iters", type=int, default=25)
+    # Model
+    p.add_argument("--n_e_list", type=int, nargs="+", default=[256, 256, 256, 256])
+    p.add_argument("--e_dim", type=int, default=32)
+    p.add_argument("--encoder_dims", type=int, nargs="+", default=[1024, 512, 256, 128])
+    p.add_argument("--commitment_weight", type=float, default=0.25)
+    p.add_argument("--quant_loss_weight", type=float, default=1.0)
+    p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
+    p.add_argument("--sk_iters", type=int, default=50)
+    p.add_argument("--kmeans_iters", type=int, default=50)
 
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--batch_size", type=int, default=512)
-    parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--weight_decay", type=float, default=1e-5)
-    parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--amp", action="store_true")
-    parser.add_argument("--seed", type=int, default=2025)
-    parser.add_argument(
-        "--normalize",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="L2-normalize embeddings before training",
-    )
-    parser.add_argument("--refine_collisions", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--max_refine_rounds", type=int, default=20)
-    parser.add_argument("--target_collision_rate", type=float, default=0.10)
-    parser.add_argument("--refine_sk_epsilon", type=float, default=0.003)
-    parser.add_argument("--refine_sk_iters", type=int, default=50)
-    return parser.parse_args()
+    # Training
+    p.add_argument("--epochs", type=int, default=200)
+    p.add_argument("--batch_size", type=int, default=1024)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--weight_decay", type=float, default=1e-4)
+    p.add_argument("--num_workers", type=int, default=4)
+    p.add_argument("--seed", type=int, default=42)
+
+    # Refine
+    p.add_argument("--max_refine_rounds", type=int, default=20)
+    p.add_argument("--target_collision_rate", type=float, default=0.0)
+    return p.parse_args()
 
 
 def main():
@@ -361,31 +233,34 @@ def main():
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
-    if not os.path.exists(args.input_file):
-        raise FileNotFoundError(f"Input not found: {args.input_file}")
-
-    item_ids, embeddings = load_parquet_embeddings(args.input_file)
-    if args.normalize:
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-12
-        embeddings = embeddings / norms
-        print("Applied L2 normalization to embeddings.")
+    item_ids, emb = load_parquet(args.input_file)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = build_model(args, input_dim=embeddings.shape[1], device=device)
+    model = RQVAE(
+        in_dim=emb.shape[1],
+        e_dim=args.e_dim,
+        n_e_list=args.n_e_list,
+        encoder_dims=args.encoder_dims,
+        commitment_weight=args.commitment_weight,
+        sk_epsilons=args.sk_epsilons,
+        sk_iters=args.sk_iters,
+        quant_loss_weight=args.quant_loss_weight,
+    ).to(device)
 
     if args.load_model and os.path.exists(args.model_path):
         load_checkpoint(model, args.model_path, device)
     else:
-        train_model(model, embeddings, args, device)
-        save_checkpoint(model, args.model_path, args)
+        train(model, emb, args, device)
 
-    codes = encode_embeddings(model, embeddings, batch_size=args.batch_size, device=device, use_amp=args.amp)
-    init_rate, _, init_max_dup = collision_stats(codes)
-    print(f"[Codes] initial collision_rate={init_rate:.4f}, max_dup={init_max_dup}")
-    if args.refine_collisions:
-        codes = refine_collisions(model, embeddings, codes, args, device)
-        final_rate, _, final_max_dup = collision_stats(codes)
-        print(f"[Codes] refined collision_rate={final_rate:.4f}, max_dup={final_max_dup}")
+    codes = encode_all(model, emb, args.batch_size, device)
+    rate, _, max_dup = collision_stats(codes)
+    print(f"[Codes] collision_rate={rate:.4f}, max_dup={max_dup}")
+
+    codes = refine_collisions(
+        model, emb, codes, device,
+        max_rounds=args.max_refine_rounds,
+        target_rate=args.target_collision_rate,
+    )
     save_codes(item_ids, codes, args.output_file)
 
 
