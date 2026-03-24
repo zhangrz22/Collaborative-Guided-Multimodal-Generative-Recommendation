@@ -177,8 +177,8 @@ def train(model, emb, cf_emb, args, device):
         else:
             model.cf_alpha = target_cf_alpha
 
-        # Reset best_loss when CF loss first kicks in
-        if epoch == args.cf_warmup + 1:
+        # Reset best_loss when CF alpha reaches full value
+        if epoch == args.cf_warmup + args.cf_ramp + 1:
             best_loss = float("inf")
 
         # Re-cluster codebook each epoch for diversity loss
