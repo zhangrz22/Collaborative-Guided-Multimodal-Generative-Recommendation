@@ -149,7 +149,6 @@ def train(model, emb, cf_emb, args, device):
     n_items = len(emb)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     # KMeans init
     print("Running KMeans init ...")
@@ -215,8 +214,6 @@ def train(model, emb, cf_emb, args, device):
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
                 code_counts[layer] += torch.bincount(codes[:, layer], minlength=args.n_e_list[layer]).cpu()
-
-        scheduler.step()
 
         # Per-layer usage
         usage_parts = []
