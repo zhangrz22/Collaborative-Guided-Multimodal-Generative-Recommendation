@@ -255,7 +255,7 @@ class RQVAE(nn.Module):
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
         if encoder_dims is None:
-            encoder_dims = [2048, 1024, 512, 256, 128, 64]
+            encoder_dims = [1024, 512, 256, 128]
 
         self.quant_loss_weight = quant_loss_weight
         self.cf_alpha = cf_alpha
