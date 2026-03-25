@@ -16,16 +16,13 @@ FUSION_DROPOUT=${FUSION_DROPOUT:-0.1}
 
 # Model
 N_E_LIST=${N_E_LIST:-"256 256 256 256"}
-E_DIM=${E_DIM:-32}
+E_DIM=${E_DIM:-64}
 DECODER_DIMS=${DECODER_DIMS:-"128 256 512 1024"}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 EMA_DECAY=${EMA_DECAY:-0.99}
 DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
 DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.0001}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
-CF_ALPHA=${CF_ALPHA:-0.0}
-CF_WARMUP=${CF_WARMUP:-0}
-CF_RAMP=${CF_RAMP:-0}
 SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
 SK_ITERS=${SK_ITERS:-50}
 KMEANS_ITERS=${KMEANS_ITERS:-100}
@@ -55,7 +52,6 @@ echo "  model=${MODEL_PATH}"
 echo "  cf_ckpt=${CF_CKPT}"
 echo "  d_model=${D_MODEL}, n_heads=${N_HEADS}, fusion_dropout=${FUSION_DROPOUT}"
 echo "  n_e_list=${N_E_LIST}, e_dim=${E_DIM}, decoder_dims=${DECODER_DIMS}"
-echo "  cf_alpha=${CF_ALPHA}, cf_warmup=${CF_WARMUP}, cf_ramp=${CF_RAMP}"
 echo "  diversity_weight=${DIVERSITY_WEIGHT}, n_clusters=${N_CLUSTERS}"
 echo "  epochs=${EPOCHS}, batch=${BATCH_SIZE}, lr=${LR}"
 
@@ -76,9 +72,6 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --dead_threshold "${DEAD_THRESHOLD}" \
   --diversity_weight "${DIVERSITY_WEIGHT}" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
-  --cf_alpha "${CF_ALPHA}" \
-  --cf_warmup "${CF_WARMUP}" \
-  --cf_ramp "${CF_RAMP}" \
   --sk_epsilons ${SK_EPSILONS} \
   --sk_iters "${SK_ITERS}" \
   --kmeans_iters "${KMEANS_ITERS}" \

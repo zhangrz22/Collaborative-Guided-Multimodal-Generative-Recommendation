@@ -206,39 +206,19 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
     cf_tensor = torch.from_numpy(cf_emb).to(device)
     image_tensor = torch.from_numpy(image_emb).to(device)
     mask_tensor = torch.from_numpy(image_mask).to(device)
-    target_cf_alpha = model.cf_alpha
-
-    print(f"CF warmup: epochs 1~{args.cf_warmup} pure AE+VQ, "
-          f"then ramp CF alpha 0->{target_cf_alpha} over epochs "
-          f"{args.cf_warmup+1}~{args.cf_warmup + args.cf_ramp}")
 
     best_loss = float("inf")
     for epoch in range(1, args.epochs + 1):
         model.train()
-
-        # CF alpha schedule: warmup -> linear ramp -> full
-        if epoch <= args.cf_warmup:
-            model.cf_alpha = 0.0
-        elif epoch <= args.cf_warmup + args.cf_ramp:
-            progress = (epoch - args.cf_warmup) / args.cf_ramp
-            model.cf_alpha = target_cf_alpha * progress
-        else:
-            model.cf_alpha = target_cf_alpha
-
-        # Reset best_loss when CF alpha reaches full value
-        if epoch == args.cf_warmup + args.cf_ramp + 1:
-            best_loss = float("inf")
 
         # Re-cluster codebook each epoch for diversity loss
         cluster_labels_list = compute_cluster_labels(model, n_clusters=args.n_clusters)
 
         # Shuffle and batch manually (to keep all modalities aligned)
         perm = np.random.permutation(n_items)
-        total_loss = total_recon = total_vq = total_cf = 0.0
+        total_loss = total_recon = total_vq = 0.0
         n = 0
         code_counts = torch.zeros(len(args.n_e_list), max(args.n_e_list), dtype=torch.long)
-
-        use_cf = model.cf_alpha > 0
 
         n_batches = (n_items + args.batch_size - 1) // args.batch_size
         for bi in tqdm(range(n_batches), desc=f"Epoch {epoch}/{args.epochs}"):
@@ -260,7 +240,6 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
             total_loss += out["loss"].item() * bs
             total_recon += out["recon_loss"].item() * bs
             total_vq += out["quant_loss"].item() * bs
-            total_cf += out["cf_loss"].item() * bs
 
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
@@ -277,17 +256,15 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
             usage_parts.append(f"L{layer}:{used}/{args.n_e_list[layer]}(ppl={ppl:.0f})")
 
         epoch_loss = total_loss / n
-        cf_alpha_str = f" cf_alpha={model.cf_alpha:.4f}" if use_cf else " cf=OFF"
         print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={total_recon/n:.6f} "
-              f"vq={total_vq/n:.6f} cf={total_cf/n:.6f}{cf_alpha_str} | {' '.join(usage_parts)}")
+              f"vq={total_vq/n:.6f} | {' '.join(usage_parts)}")
 
         if epoch_loss < best_loss:
             best_loss = epoch_loss
             save_checkpoint(model, args.model_path, args)
             print(f"  -> saved (loss={epoch_loss:.6f})")
 
-    # Restore and reload best
-    model.cf_alpha = target_cf_alpha
+    # Reload best
     load_checkpoint(model, args.model_path, device)
 
 
@@ -359,9 +336,6 @@ def parse_args():
     p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--diversity_weight", type=float, default=0.0001)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
-    p.add_argument("--cf_alpha", type=float, default=0.01)
-    p.add_argument("--cf_warmup", type=int, default=50)
-    p.add_argument("--cf_ramp", type=int, default=50)
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
     p.add_argument("--sk_iters", type=int, default=50)
     p.add_argument("--kmeans_iters", type=int, default=100)
@@ -418,7 +392,6 @@ def main():
         sk_epsilons=args.sk_epsilons,
         sk_iters=args.sk_iters,
         quant_loss_weight=args.quant_loss_weight,
-        cf_alpha=args.cf_alpha,
     ).to(device)
 
     if args.load_model and os.path.exists(args.model_path):

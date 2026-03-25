@@ -326,8 +326,7 @@ class RQVAE(nn.Module):
                  commitment_weight=0.25, ema_decay=0.99, dead_threshold=2.0,
                  diversity_weight=0.01,
                  sk_epsilons=None, sk_iters=50,
-                 quant_loss_weight=1.0,
-                 cf_alpha=0.1):
+                 quant_loss_weight=1.0):
         super().__init__()
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
@@ -335,7 +334,6 @@ class RQVAE(nn.Module):
             decoder_dims = [128, 256, 512, 1024]
 
         self.quant_loss_weight = quant_loss_weight
-        self.cf_alpha = cf_alpha
         self.text_dim = text_dim
         self.image_dim = image_dim
         self.cf_dim = cf_dim
@@ -360,9 +358,6 @@ class RQVAE(nn.Module):
         self.text_decoder = _build_decoder(text_dim)
         self.image_decoder = _build_decoder(image_dim)
         self.cf_decoder = _build_decoder(cf_dim)
-
-        # CF projection for contrastive loss (cf_dim -> e_dim)
-        self.cf_contrast_proj = nn.Linear(cf_dim, e_dim)
 
         # Residual VQ
         self.rq = ResidualVQ(
@@ -398,22 +393,10 @@ class RQVAE(nn.Module):
 
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
-        # CF contrastive loss (InfoNCE)
-        cf_loss = torch.zeros((), device=text_emb.device)
-        if cf_emb is not None and self.cf_alpha > 0:
-            cf_proj = self.cf_contrast_proj(cf_emb)
-            z_norm = F.normalize(z_q_st, dim=-1)
-            cf_norm = F.normalize(cf_proj, dim=-1)
-            sim = z_norm @ cf_norm.t() / 0.07
-            labels = torch.arange(sim.shape[0], device=sim.device)
-            cf_loss = F.cross_entropy(sim, labels)
-            loss = loss + self.cf_alpha * cf_loss
-
         return {
             "loss": loss,
             "recon_loss": recon_loss.detach(),
             "quant_loss": quant_loss.detach(),
-            "cf_loss": cf_loss.detach(),
             "codes": codes,
         }
 
