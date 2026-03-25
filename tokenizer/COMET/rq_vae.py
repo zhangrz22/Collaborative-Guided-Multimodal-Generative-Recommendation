@@ -306,8 +306,8 @@ class COMETFusion(nn.Module):
         attn_out, _ = self.cross_attn(cf_q, kv, kv)  # [B, 1, d_model]
         attn_out = attn_out.squeeze(1)                # [B, d_model]
 
-        # Residual + LayerNorm
-        fused = self.layer_norm(attn_out + cf_q.squeeze(1))
+        # Residual + text skip-connection + LayerNorm
+        fused = self.layer_norm(attn_out + cf_q.squeeze(1) + text_kv.squeeze(1))
 
         # MLP to codebook dimension
         z = self.fusion_mlp(fused)  # [B, e_dim]
