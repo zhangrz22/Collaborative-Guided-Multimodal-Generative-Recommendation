@@ -288,7 +288,6 @@ class COMETFusion(nn.Module):
             image_mask: [B] bool, True = image is missing (pad with learnable vector)
         Returns:
             z: [B, e_dim]
-            recon_target: [B, d_model * 3] — concat of projected text, image, cf
         """
         # Fill missing images with learnable padding
         if image_mask is not None and image_mask.any():
@@ -299,13 +298,6 @@ class COMETFusion(nn.Module):
         text_kv = self.text_proj(text_emb).unsqueeze(1)     # [B, 1, d_model]
         image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
         cf_q = self.cf_proj(cf_emb).unsqueeze(1)             # [B, 1, d_model]
-
-        # Reconstruction target: concat of all three projections (detached)
-        recon_target = torch.cat([
-            text_kv.squeeze(1),
-            image_kv.squeeze(1),
-            cf_q.squeeze(1),
-        ], dim=-1)  # [B, d_model * 3]
 
         # KV: concat text + image -> [B, 2, d_model]
         kv = torch.cat([text_kv, image_kv], dim=1)
@@ -319,7 +311,7 @@ class COMETFusion(nn.Module):
 
         # MLP to codebook dimension
         z = self.fusion_mlp(fused)  # [B, e_dim]
-        return z, recon_target
+        return z
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +336,9 @@ class RQVAE(nn.Module):
 
         self.quant_loss_weight = quant_loss_weight
         self.cf_alpha = cf_alpha
+        self.text_dim = text_dim
+        self.image_dim = image_dim
+        self.cf_dim = cf_dim
 
         # Encoder: COMET cross-attention fusion
         self.encoder = COMETFusion(
@@ -352,15 +347,19 @@ class RQVAE(nn.Module):
             dropout=fusion_dropout,
         )
 
-        # Decoder: reconstruct projected [text; image; cf] (d_model * 3)
-        recon_dim = d_model * 3
-        dims_dec = [e_dim] + decoder_dims + [recon_dim]
-        dec = []
-        for i in range(len(dims_dec) - 1):
-            dec.append(nn.Linear(dims_dec[i], dims_dec[i + 1]))
-            if i < len(dims_dec) - 2:
-                dec.append(nn.ReLU())
-        self.decoder = nn.Sequential(*dec)
+        # Three independent decoders: reconstruct original text, image, cf
+        def _build_decoder(out_dim):
+            dims = [e_dim] + decoder_dims + [out_dim]
+            layers = []
+            for i in range(len(dims) - 1):
+                layers.append(nn.Linear(dims[i], dims[i + 1]))
+                if i < len(dims) - 2:
+                    layers.append(nn.ReLU())
+            return nn.Sequential(*layers)
+
+        self.text_decoder = _build_decoder(text_dim)
+        self.image_decoder = _build_decoder(image_dim)
+        self.cf_decoder = _build_decoder(cf_dim)
 
         # CF projection for contrastive loss (cf_dim -> e_dim)
         self.cf_contrast_proj = nn.Linear(cf_dim, e_dim)
@@ -383,13 +382,20 @@ class RQVAE(nn.Module):
             cf_emb:    [B, cf_dim]
             image_mask: [B] bool, True = missing image
         """
-        z, recon_target = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
+        z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
         z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list)
         z_q_st = z + (z_q - z).detach()
-        x_rec = self.decoder(z_q_st)
 
-        # Reconstruct projected [text; image; cf]
-        recon_loss = F.mse_loss(x_rec, recon_target)
+        # Three independent reconstructions, equal-weight average
+        text_rec = self.text_decoder(z_q_st)
+        image_rec = self.image_decoder(z_q_st)
+        cf_rec = self.cf_decoder(z_q_st)
+
+        text_recon_loss = F.mse_loss(text_rec, text_emb)
+        image_recon_loss = F.mse_loss(image_rec, image_emb)
+        cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
+        recon_loss = (text_recon_loss + image_recon_loss + cf_recon_loss) / 3.0
+
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
         # CF contrastive loss (InfoNCE)
@@ -413,11 +419,11 @@ class RQVAE(nn.Module):
 
     @torch.no_grad()
     def encode(self, text_emb, image_emb, cf_emb, image_mask=None, use_sk=False):
-        z, _ = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
+        z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
         return self.rq.encode(z, use_sk=use_sk)
 
     @torch.no_grad()
     def init_codebooks(self, text_emb, image_emb, cf_emb, image_mask=None,
                        n_iters=50):
-        z, _ = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
+        z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
         self.rq.init_codebooks(z, n_iters=n_iters)

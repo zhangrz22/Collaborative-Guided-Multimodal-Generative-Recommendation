@@ -353,7 +353,7 @@ def parse_args():
     # Model
     p.add_argument("--n_e_list", type=int, nargs="+", default=[256, 256, 256, 256])
     p.add_argument("--e_dim", type=int, default=32)
-    p.add_argument("--decoder_dims", type=int, nargs="+", default=[128, 256, 512])
+    p.add_argument("--decoder_dims", type=int, nargs="+", default=[128, 256, 512, 1024])
     p.add_argument("--commitment_weight", type=float, default=0.25)
     p.add_argument("--ema_decay", type=float, default=0.99)
     p.add_argument("--dead_threshold", type=float, default=2.0)
