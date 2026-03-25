@@ -39,7 +39,7 @@ DEFAULT_DATASET_DIR = os.path.join(DEFAULT_TIGER_DATA_DIR, DEFAULT_DATASET)
 
 DEFAULT_CONFIG = {
     # Default to RQ-VAE output parquet
-    "codes_parquet": os.path.join(DEFAULT_DATASET_DIR, "item_LETTER_codes.parquet"),
+    "codes_parquet": os.path.join(DEFAULT_DATASET_DIR, "item_COMET_codes.parquet"),
     # Existing user sequence file
     "interaction_txt": os.path.join(DEFAULT_DATA_ROOT, "interaction_sequences_truncated.txt"),
     # TIGER-only data output root
