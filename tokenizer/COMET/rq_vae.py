@@ -305,7 +305,7 @@ class COMETFusion(nn.Module):
             text_kv.squeeze(1),
             image_kv.squeeze(1),
             cf_q.squeeze(1),
-        ], dim=-1).detach()  # [B, d_model * 3]
+        ], dim=-1)  # [B, d_model * 3]
 
         # KV: concat text + image -> [B, 2, d_model]
         kv = torch.cat([text_kv, image_kv], dim=1)
