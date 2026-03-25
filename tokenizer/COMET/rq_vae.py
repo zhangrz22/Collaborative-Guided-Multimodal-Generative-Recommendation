@@ -353,6 +353,9 @@ class RQVAE(nn.Module):
                 dec.append(nn.ReLU())
         self.decoder = nn.Sequential(*dec)
 
+        # CF projection for contrastive loss (cf_dim -> e_dim)
+        self.cf_contrast_proj = nn.Linear(cf_dim, e_dim)
+
         # Residual VQ
         self.rq = ResidualVQ(
             n_e_list=n_e_list, e_dim=e_dim,
@@ -383,8 +386,9 @@ class RQVAE(nn.Module):
         # CF contrastive loss (InfoNCE)
         cf_loss = torch.zeros((), device=text_emb.device)
         if cf_emb is not None and self.cf_alpha > 0:
+            cf_proj = self.cf_contrast_proj(cf_emb)
             z_norm = F.normalize(z_q_st, dim=-1)
-            cf_norm = F.normalize(cf_emb, dim=-1)
+            cf_norm = F.normalize(cf_proj, dim=-1)
             sim = z_norm @ cf_norm.t() / 0.07
             labels = torch.arange(sim.shape[0], device=sim.device)
             cf_loss = F.cross_entropy(sim, labels)
