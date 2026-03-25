@@ -245,7 +245,7 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
             batch_idx = perm[bi * args.batch_size: (bi + 1) * args.batch_size]
             batch_text = torch.from_numpy(text_emb[batch_idx]).to(device, non_blocking=True)
             batch_image = image_tensor[batch_idx]
-            batch_cf = cf_tensor[batch_idx] if use_cf else None
+            batch_cf = cf_tensor[batch_idx]
             batch_mask = mask_tensor[batch_idx]
 
             optimizer.zero_grad(set_to_none=True)
