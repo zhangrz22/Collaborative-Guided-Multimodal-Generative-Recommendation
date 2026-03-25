@@ -7,7 +7,7 @@ Usage:
 """
 
 import argparse
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPImageProcessor
 
 
 def main():
@@ -18,7 +18,7 @@ def main():
 
     print(f"Downloading {args.model_name} ...")
     model = CLIPModel.from_pretrained(args.model_name)
-    processor = CLIPProcessor.from_pretrained(args.model_name)
+    processor = CLIPImageProcessor.from_pretrained(args.model_name)
 
     model.save_pretrained(args.save_dir)
     processor.save_pretrained(args.save_dir)

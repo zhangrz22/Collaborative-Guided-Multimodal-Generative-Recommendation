@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Step 1: Download CLIP model (skip if already exists)
 CLIP_DIR=${CLIP_DIR:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multimodal-Generative-Recommendation/tokenizer/COMET/model/clip-vit-large-patch14}
 
-if [ ! -d "${CLIP_DIR}" ] || [ -z "$(ls -A ${CLIP_DIR} 2>/dev/null)" ]; then
+if [ ! -f "${CLIP_DIR}/preprocessor_config.json" ]; then
     echo "=== Step 1: Downloading CLIP ViT-L/14 ==="
     python3 "${SCRIPT_DIR}/download_clip.py" --save_dir "${CLIP_DIR}"
 else

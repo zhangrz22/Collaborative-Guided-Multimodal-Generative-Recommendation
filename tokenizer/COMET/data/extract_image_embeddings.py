@@ -26,7 +26,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from transformers import CLIPModel, CLIPProcessor
+from transformers import CLIPModel, CLIPImageProcessor
 
 
 class ImageDataset(Dataset):
@@ -81,16 +81,18 @@ def main():
 
     print(f"Items with images: {len(item_ids)}, missing: {len(missing)}")
 
-    # Load CLIP
+    # Load CLIP (only vision part)
     print(f"Loading CLIP from {args.clip_dir} ...")
-    processor = CLIPProcessor.from_pretrained(args.clip_dir)
-    model = CLIPModel.from_pretrained(args.clip_dir)
+    processor = CLIPImageProcessor.from_pretrained(args.clip_dir)
+    clip_model = CLIPModel.from_pretrained(args.clip_dir)
     device = torch.device(args.device)
-    model = model.vision_model.to(device)  # Only need vision encoder
-    visual_projection = CLIPModel.from_pretrained(args.clip_dir).visual_projection.to(device)
-    model.eval()
+
+    vision_model = clip_model.vision_model.to(device)
+    visual_projection = clip_model.visual_projection.to(device)
+    vision_model.eval()
     visual_projection.eval()
-    print(f"CLIP loaded on {device}")
+    del clip_model  # free memory
+    print(f"CLIP vision encoder loaded on {device}")
 
     # Build dataloader
     dataset = ImageDataset(item_ids, image_paths, processor)
@@ -106,7 +108,7 @@ def main():
     with torch.no_grad():
         for batch_ids, pixel_values in tqdm(loader, desc="Extracting"):
             pixel_values = pixel_values.to(device)
-            outputs = model(pixel_values=pixel_values)
+            outputs = vision_model(pixel_values=pixel_values)
             # CLS token pooled output -> visual projection -> 768-dim
             pooled = outputs.pooler_output  # [B, 1024] (ViT-L hidden dim)
             emb = visual_projection(pooled)  # [B, 768] (CLIP projection dim)
