@@ -306,8 +306,8 @@ class COMETFusion(nn.Module):
         attn_out, _ = self.cross_attn(cf_q, kv, kv)  # [B, 1, d_model]
         attn_out = attn_out.squeeze(1)                # [B, d_model]
 
-        # Residual + LayerNorm (pure CF-as-Query)
-        fused = self.layer_norm(attn_out + cf_q.squeeze(1))
+        # Residual + text skip-connection + LayerNorm
+        fused = self.layer_norm(attn_out + cf_q.squeeze(1) + text_kv.squeeze(1))
 
         # MLP to codebook dimension
         z = self.fusion_mlp(fused)  # [B, e_dim]
@@ -389,7 +389,7 @@ class RQVAE(nn.Module):
         text_recon_loss = F.mse_loss(text_rec, text_emb)
         image_recon_loss = F.mse_loss(image_rec, image_emb)
         cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
-        recon_loss = text_recon_loss + 0.1 * image_recon_loss + 0.1 * cf_recon_loss
+        recon_loss = (text_recon_loss + image_recon_loss + cf_recon_loss) / 3.0
 
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
