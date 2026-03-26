@@ -389,7 +389,7 @@ class RQVAE(nn.Module):
         text_recon_loss = F.mse_loss(text_rec, text_emb)
         image_recon_loss = F.mse_loss(image_rec, image_emb)
         cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
-        recon_loss = (text_recon_loss + image_recon_loss + cf_recon_loss) / 3.0
+        recon_loss = text_recon_loss + 0.1 * image_recon_loss + 0.1 * cf_recon_loss
 
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
