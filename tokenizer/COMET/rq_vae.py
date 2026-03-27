@@ -334,9 +334,6 @@ class RQVAE(nn.Module):
             decoder_dims = [128, 256, 512, 1024]
 
         self.quant_loss_weight = quant_loss_weight
-        self.text_dim = text_dim
-        self.image_dim = image_dim
-        self.cf_dim = cf_dim
 
         # Encoder: COMET cross-attention fusion
         self.encoder = COMETFusion(
@@ -345,19 +342,14 @@ class RQVAE(nn.Module):
             dropout=fusion_dropout,
         )
 
-        # Three independent decoders: reconstruct original text, image, cf
-        def _build_decoder(out_dim):
-            dims = [e_dim] + decoder_dims + [out_dim]
-            layers = []
-            for i in range(len(dims) - 1):
-                layers.append(nn.Linear(dims[i], dims[i + 1]))
-                if i < len(dims) - 2:
-                    layers.append(nn.ReLU())
-            return nn.Sequential(*layers)
-
-        self.text_decoder = _build_decoder(text_dim)
-        self.image_decoder = _build_decoder(image_dim)
-        self.cf_decoder = _build_decoder(cf_dim)
+        # Decoder: reconstruct text embedding
+        dims_dec = [e_dim] + decoder_dims + [text_dim]
+        dec = []
+        for i in range(len(dims_dec) - 1):
+            dec.append(nn.Linear(dims_dec[i], dims_dec[i + 1]))
+            if i < len(dims_dec) - 2:
+                dec.append(nn.ReLU())
+        self.decoder = nn.Sequential(*dec)
 
         # Residual VQ
         self.rq = ResidualVQ(
@@ -380,17 +372,10 @@ class RQVAE(nn.Module):
         z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
         z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list)
         z_q_st = z + (z_q - z).detach()
+        x_rec = self.decoder(z_q_st)
 
-        # Three independent reconstructions, equal-weight average
-        text_rec = self.text_decoder(z_q_st)
-        image_rec = self.image_decoder(z_q_st)
-        cf_rec = self.cf_decoder(z_q_st)
-
-        text_recon_loss = F.mse_loss(text_rec, text_emb)
-        image_recon_loss = F.mse_loss(image_rec, image_emb)
-        cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
-        recon_loss = (text_recon_loss + image_recon_loss + cf_recon_loss) / 3.0
-
+        # Reconstruct text embedding
+        recon_loss = F.mse_loss(x_rec, text_emb)
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
         return {
