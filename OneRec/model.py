@@ -12,7 +12,7 @@ class ModelConfig:
     target_type_num: int = 1
     beam_size: int = 10
     precut_num: int = 1024
-    max_his_len: int = 800
+    max_his_len: int = 50
     semantic_token_num: int = 4  # a, b, c, c (4个位置)
     num_vocab_layers: int = 3    # a, b, c (3个独立词表)
     position_to_vocab: tuple = (0, 1, 2, 2)  # 位置到词表的映射: [a, b, c, c]
@@ -337,10 +337,75 @@ class OneRecV2(nn.Module):
             **{f"position_loss/position_loss_{p}": loss_per_token[p] for p in range(self.config.semantic_token_num)},
         }
 
-    def generate(self, his_sids, his_pid_types, target_type):
+    def _get_trie_allowed_tokens(self, trie, path_tokens, bs, num_beams, position):
+        """
+        根据当前 prefix 从 trie 中查询每个 beam 允许的 token set.
+
+        Args:
+            trie: 嵌套 dict，key 是 token id (int)
+            path_tokens: [bs, beam_size, position] 已生成的 token
+            bs: batch size
+            num_beams: beam size (position 0 时为 1)
+            position: 当前要生成的位置 (0-indexed)
+
+        Returns:
+            allowed: list of sets, length = bs * num_beams
+        """
+        allowed = []
+        if position == 0:
+            # 第一层：trie 根节点的所有 key
+            root_keys = set(trie.keys())
+            for _ in range(bs * num_beams):
+                allowed.append(root_keys)
+        else:
+            # path_tokens: [bs, beam_size, position]
+            for b in range(bs):
+                for beam in range(num_beams):
+                    node = trie
+                    valid = True
+                    for p in range(position):
+                        tok = path_tokens[b, beam, p].item()
+                        if tok in node:
+                            node = node[tok]
+                        else:
+                            valid = False
+                            break
+                    if valid and len(node) > 0:
+                        allowed.append(set(node.keys()))
+                    else:
+                        # Fallback: 不做约束（允许所有 token）
+                        allowed.append(None)
+        return allowed
+
+    def _apply_trie_mask(self, token_probs, allowed_list, device):
+        """
+        对 log_softmax 后的概率应用 trie mask.
+
+        Args:
+            token_probs: [bs * beam_size, vocab_size] log probabilities
+            allowed_list: list of sets (or None for no constraint)
+            device: torch device
+
+        Returns:
+            masked token_probs: [bs * beam_size, vocab_size]
+        """
+        mask = torch.zeros_like(token_probs, dtype=torch.bool)
+        for idx, allowed_set in enumerate(allowed_list):
+            if allowed_set is None:
+                # No constraint — allow all
+                mask[idx, :] = True
+            else:
+                allowed_tensor = torch.tensor(list(allowed_set), dtype=torch.long, device=device)
+                mask[idx, allowed_tensor] = True
+        # Set disallowed tokens to -inf
+        token_probs = token_probs.masked_fill(~mask, float('-inf'))
+        return token_probs
+
+    def generate(self, his_sids, his_pid_types, target_type, trie=None):
         bs = his_sids.shape[0]
 
         context_list = self.context_processor(his_sids, his_pid_types)
+        use_trie = trie is not None
 
         all_self_kv_cache = [None] * len(self.layers)
         for i in range(self.config.semantic_token_num):
@@ -362,30 +427,61 @@ class OneRecV2(nn.Module):
             vocab_idx = self.config.position_to_vocab[i]
             h = self.output[vocab_idx](h)[:, -1, :]
             token_probs = F.log_softmax(h, dim=-1)
-            token_probs, token_indices = token_probs.topk(k=self.config.precut_num, dim=-1)  # [bs * beam_size, precut_num]
 
-            if i == 0:
-                topk_probs, topk_indices = torch.topk(token_probs, k=self.config.beam_size)  # [bs * 1, beam_size]
-                topk_tokens = torch.gather(token_indices, 1, topk_indices)  # [bs * 1, beam_size]
-                topk_probs = topk_probs.view(bs, self.config.beam_size, 1)
-                topk_tokens = topk_tokens.view(bs, self.config.beam_size, 1)
-                path_tokens = topk_tokens
-                path_probs = topk_probs
-                semantic_id = path_tokens
+            if use_trie:
+                # === Trie 约束模式：跳过 precut，直接在全 vocab 上做 trie mask + beam 选择 ===
+                num_beams = 1 if i == 0 else self.config.beam_size
+                allowed_list = self._get_trie_allowed_tokens(
+                    trie, path_tokens if i > 0 else None, bs, num_beams, i
+                )
+                token_probs = self._apply_trie_mask(token_probs, allowed_list, h.device)
+
+                if i == 0:
+                    topk_probs, topk_tokens = torch.topk(token_probs, k=self.config.beam_size)  # [bs, beam_size]
+                    topk_probs = topk_probs.view(bs, self.config.beam_size, 1)
+                    topk_tokens = topk_tokens.view(bs, self.config.beam_size, 1)
+                    path_tokens = topk_tokens
+                    path_probs = topk_probs
+                    semantic_id = path_tokens
+                    beam_indices = torch.zeros(bs, self.config.beam_size, dtype=torch.long, device=h.device)
+                else:
+                    # token_probs: [bs * beam_size, vocab_size]
+                    accu_probs = path_probs + token_probs.view(bs, self.config.beam_size, self.config.vocab_size)
+                    # [bs, beam_size, vocab_size]
+                    accu_probs = accu_probs.view(bs, self.config.beam_size * self.config.vocab_size)
+                    topk_probs, topk_indices = accu_probs.topk(k=self.config.beam_size)  # [bs, beam_size]
+                    topk_tokens = topk_indices % self.config.vocab_size  # [bs, beam_size]
+                    beam_indices = topk_indices // self.config.vocab_size  # [bs, beam_size]
+                    path_tokens = torch.gather(path_tokens, dim=1, index=beam_indices.unsqueeze(-1).expand(-1, -1, i))
+                    path_tokens = torch.cat([path_tokens, topk_tokens.unsqueeze(-1)], dim=2)  # [bs, beam_size, i+1]
+                    semantic_id = path_tokens[:, :, -1:]  # [bs, beam_size, 1]
+                    path_probs = topk_probs.view(bs, self.config.beam_size, 1)
             else:
-                accu_probs = path_probs + token_probs.view(bs, self.config.beam_size, self.config.precut_num)
-                # [bs, beam_size, 1] + [bs, beam_size, precut_num]
-                accu_probs = accu_probs.view(bs, self.config.beam_size * self.config.precut_num)
-                topk_probs, topk_indices = accu_probs.topk(k=self.config.beam_size)  # [bs, beam_size]
-                topk_tokens = torch.gather(token_indices.view(bs, self.config.beam_size * self.config.precut_num), 1, topk_indices)  # [bs, beam_size]
+                # === 原始逻辑：precut topk ===
+                token_probs, token_indices = token_probs.topk(k=self.config.precut_num, dim=-1)  # [bs * beam_size, precut_num]
+
+                if i == 0:
+                    topk_probs, topk_indices = torch.topk(token_probs, k=self.config.beam_size)  # [bs * 1, beam_size]
+                    topk_tokens = torch.gather(token_indices, 1, topk_indices)  # [bs * 1, beam_size]
+                    topk_probs = topk_probs.view(bs, self.config.beam_size, 1)
+                    topk_tokens = topk_tokens.view(bs, self.config.beam_size, 1)
+                    path_tokens = topk_tokens
+                    path_probs = topk_probs
+                    semantic_id = path_tokens
+                else:
+                    accu_probs = path_probs + token_probs.view(bs, self.config.beam_size, self.config.precut_num)
+                    # [bs, beam_size, 1] + [bs, beam_size, precut_num]
+                    accu_probs = accu_probs.view(bs, self.config.beam_size * self.config.precut_num)
+                    topk_probs, topk_indices = accu_probs.topk(k=self.config.beam_size)  # [bs, beam_size]
+                    topk_tokens = torch.gather(token_indices.view(bs, self.config.beam_size * self.config.precut_num), 1, topk_indices)  # [bs, beam_size]
+                    beam_indices = topk_indices // self.config.precut_num  # [bs, beam_size]
+                    path_tokens = torch.gather(path_tokens, dim=1, index=beam_indices.unsqueeze(-1).expand(-1, -1, i))
+                    path_tokens = torch.cat([path_tokens, topk_tokens.unsqueeze(-1)], axis=2)  # [bs, beam_size, i+1]
+                    semantic_id = path_tokens[:, :, -1:]  # [bs, beam_size, 1]
+                    path_probs = topk_probs.view(bs, self.config.beam_size, 1)
+
                 beam_indices = topk_indices // self.config.precut_num  # [bs, beam_size]
-                path_tokens = torch.gather(path_tokens, dim=1, index=beam_indices.unsqueeze(-1).expand(-1, -1, i))
-                path_tokens = torch.cat([path_tokens, topk_tokens.unsqueeze(-1)], axis=2)  # [bs, beam_size, i+1]
-                semantic_id = path_tokens[:, :, -1:]  # [bs, beam_size, 1]
-                path_probs = topk_probs.view(bs, self.config.beam_size, 1)
 
-
-            beam_indices = topk_indices // self.config.precut_num  # [bs, beam_size]
             batch_idx = torch.arange(bs, device=h.device).unsqueeze(1).expand(bs, self.config.beam_size)
             for layer_idx in range(len(self.layers)):
                 k_cache, v_cache = all_self_kv_cache[layer_idx]  # [bs * beam_size, n_head, i+1, head_dim]

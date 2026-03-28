@@ -28,11 +28,20 @@ echo "LOG_FILE : ${LOG_FILE}"
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
 echo ""
 
-BATCH_SIZE=${BATCH_SIZE:-128}
+# Hyperparameters (aligned with TIGER/train_8gpu.sh)
+BATCH_SIZE=${BATCH_SIZE:-256}
 VAL_BATCH_SIZE=${VAL_BATCH_SIZE:-512}
 NUM_WORKERS=${NUM_WORKERS:-4}
-MAX_HIST_LEN=${MAX_HIST_LEN:-800}
-DROPOUT=${DROPOUT:-0.2}
+MAX_HIST_LEN=${MAX_HIST_LEN:-50}
+DROPOUT=${DROPOUT:-0.1}
+NUM_EPOCHS=${NUM_EPOCHS:-30}
+LEARNING_RATE=${LEARNING_RATE:-5e-4}
+EVAL_INTERVAL=${EVAL_INTERVAL:-2}
+EVAL_START_EPOCH=${EVAL_START_EPOCH:-12}
+BEAM_SIZE=${BEAM_SIZE:-20}
+TOPK_LIST=${TOPK_LIST:-"5 10"}
+EARLY_STOP=${EARLY_STOP:-2}
+SEED=${SEED:-2025}
 
 nohup python3 -u "${SCRIPT_DIR}/main.py" \
     --mode train \
@@ -46,6 +55,14 @@ nohup python3 -u "${SCRIPT_DIR}/main.py" \
     --max_hist_len "${MAX_HIST_LEN}" \
     --target_type_num 1 \
     --dropout "${DROPOUT}" \
+    --num_epochs "${NUM_EPOCHS}" \
+    --learning_rate "${LEARNING_RATE}" \
+    --eval_interval "${EVAL_INTERVAL}" \
+    --eval_start_epoch "${EVAL_START_EPOCH}" \
+    --beam_size "${BEAM_SIZE}" \
+    --early_stop "${EARLY_STOP}" \
+    --topk_list ${TOPK_LIST} \
+    --seed "${SEED}" \
     > "${LOG_FILE}" 2>&1 &
 
 TRAIN_PID=$!

@@ -106,10 +106,19 @@ class Trainer:
             min_lr_ratio: float,
             save_dir: str,
             eval_interval: int,
+            eval_start_epoch: int,
             k_list: Tuple[int, ...],
+            sid_to_item: Dict[tuple, int],
+            trie: Optional[dict] = None,
+            early_stop: int = 0,
     ):
         self.k_list = k_list
         self.model = model
+        self.sid_to_item = sid_to_item
+        self.trie = trie
+        self.early_stop = early_stop
+        self.no_improve_count = 0
+        self.eval_start_epoch = eval_start_epoch
         # 处理DDP包装的模型
         if isinstance(model, DDP):
             self.config = model.module.config
@@ -147,7 +156,7 @@ class Trainer:
             min_lr_ratio=min_lr_ratio
         )
 
-        self.best_hit_ratio = 0.0
+        self.best_recall = 0.0
         self.global_step = 1
         self.start_epoch = 0
 
@@ -271,7 +280,7 @@ class Trainer:
 
     @torch.no_grad()
     def evaluate(self, epoch: int) -> Dict[str, float]:
-        """分布式评估函数 - 所有进程参与"""
+        """分布式评估函数 - 使用SID反解为item ID后计算Recall和NDCG"""
         self.model.eval()
 
         # 设置验证集的 epoch（重要！确保不同进程处理不同数据）
@@ -284,9 +293,12 @@ class Trainer:
             'acc': MeanMetric().to(self.device),
         }
 
-        # 添加 Hit Ratio 指标
+        # 添加 Recall 和 NDCG 指标
         for k in self.k_list:
-            metrics_dict[f'hit@{k}'] = MeanMetric().to(self.device)
+            metrics_dict[f'Recall@{k}'] = MeanMetric().to(self.device)
+            metrics_dict[f'NDCG@{k}'] = MeanMetric().to(self.device)
+
+        max_k = max(self.k_list)
 
         # 只在主进程显示进度条
         if is_main_process():
@@ -329,33 +341,45 @@ class Trainer:
             gen_outputs = model.generate(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
-                target_type=target_type
+                target_type=target_type,
+                trie=self.trie
             )
 
             pred_tokens = gen_outputs['tokens']  # [bs, beam_size, semantic_token_num]
 
-            # 计算 Hit Ratio 并更新指标
-            hit_ratios = self.compute_hit_ratio(pred_tokens, target_sids)
-            for key, value in hit_ratios.items():
-                metrics_dict[key].update(value, weight=batch_size)
+            # SID反解为item ID后计算Recall和NDCG
+            pred_item_ids = self._decode_sids_to_items(pred_tokens)  # [bs, beam_size]
+            target_item_ids = self._decode_sids_to_items(target_sids.unsqueeze(1))  # [bs, 1]
+
+            # pos_index: [bs, beam_size] bool, 表示每个beam位置是否命中
+            pos_index = pred_item_ids[:, :max_k].eq(target_item_ids)
+
+            for k in self.k_list:
+                kk = min(k, pred_item_ids.size(1))
+                # Recall@k: 前k个中是否有命中
+                recall_k = pos_index[:, :kk].any(dim=1).float().mean()
+                metrics_dict[f'Recall@{k}'].update(recall_k, weight=batch_size)
+                # NDCG@k
+                ranks = torch.arange(1, pos_index.size(1) + 1, dtype=torch.float32)
+                discounts = (1.0 / torch.log2(ranks + 1.0)).unsqueeze(0).expand_as(pos_index.float())
+                dcg = torch.where(pos_index, discounts, torch.zeros_like(discounts))
+                ndcg_k = dcg[:, :kk].sum(dim=1).float().mean()
+                metrics_dict[f'NDCG@{k}'].update(ndcg_k, weight=batch_size)
 
             # 只在主进程更新进度条
             if is_main_process():
                 postfix = {'loss': f'{loss.item():.4f}'}
-                for k in self.k_list[:2]:  # 取前两个显示
-                    postfix[f'hit@{k}'] = f'{hit_ratios[f"hit@{k}"]:.4f}'
+                for k in self.k_list:
+                    postfix[f'R@{k}'] = f'{metrics_dict[f"Recall@{k}"].compute().item():.4f}'
                 pbar.set_postfix(postfix)
 
-        # 🔥 关键修改：同步所有进程的指标
+        # 同步所有进程的指标
         if dist.is_initialized():
-            # 同步所有 MeanMetric
             for metric in metrics_dict.values():
-                # MeanMetric 内部维护 value 和 weight
-                # 需要同步 total 和 count
                 dist.all_reduce(metric.mean_value, op=dist.ReduceOp.SUM)
                 dist.all_reduce(metric.weight, op=dist.ReduceOp.SUM)
 
-        # 统一计算所有平均指标（所有进程都会计算，结果一致）
+        # 统一计算所有平均指标
         metrics = {
             f'valid_{key}': metric.compute().item()
             for key, metric in metrics_dict.items()
@@ -366,37 +390,24 @@ class Trainer:
             self.writer.add_scalar('Valid/loss', metrics['valid_loss'], epoch)
             self.writer.add_scalar('Valid/accuracy', metrics['valid_acc'], epoch)
             for k in self.k_list:
-                self.writer.add_scalar(f'Valid/hit@{k}', metrics[f'valid_hit@{k}'], epoch)
+                self.writer.add_scalar(f'Valid/Recall@{k}', metrics[f'valid_Recall@{k}'], epoch)
+                self.writer.add_scalar(f'Valid/NDCG@{k}', metrics[f'valid_NDCG@{k}'], epoch)
 
         return metrics
 
-    def compute_hit_ratio(
-            self,
-            pred_tokens: torch.Tensor,
-            target_sids: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+    def _decode_sids_to_items(self, sid_tokens: torch.Tensor) -> torch.Tensor:
         """
-        计算 Hit Ratio
-        pred_tokens: [bs, beam_size, semantic_token_num]
-        target_sids: [bs, semantic_token_num]
+        将SID token序列反解为item ID
+        sid_tokens: [bs, num, semantic_token_num] 或任意前缀维度 + semantic_token_num
+        返回: [bs, num] item IDs, 未知SID返回-1
         """
-        beam_size = pred_tokens.size(1)
-
-        # 扩展 target 以便比较
-        target_expanded = target_sids.unsqueeze(1).expand(-1, beam_size, -1)  # [bs, beam_size, semantic_token_num]
-
-        # 判断每个 beam 是否完全匹配
-        matches = (pred_tokens == target_expanded).all(dim=2)  # [bs, beam_size]
-
-        hit_ratios = {}
-        for k in self.k_list:
-            if k > beam_size:
-                k = beam_size
-            # 检查前 k 个 beam 中是否有匹配
-            hit_at_k = matches[:, :k].any(dim=1).float().mean()
-            hit_ratios[f'hit@{k}'] = hit_at_k
-
-        return hit_ratios
+        shape = sid_tokens.shape[:-1]
+        flat = sid_tokens.reshape(-1, sid_tokens.size(-1)).cpu()
+        out = torch.full((flat.size(0),), -1, dtype=torch.long)
+        for i in range(flat.size(0)):
+            sid_tuple = tuple(int(x) for x in flat[i].tolist())
+            out[i] = self.sid_to_item.get(sid_tuple, -1)
+        return out.reshape(shape)
 
     def save_checkpoint_async(self, epoch, metrics, is_best, current_hit_ratio):
         """异步保存检查点"""
@@ -427,19 +438,19 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'metrics': metrics,
             'model_config': model.config,
-            'best_hit_ratio': self.best_hit_ratio,
+            'best_recall': self.best_recall,
         }
 
         # 保存最新检查点
         latest_path = self.save_dir / 'latest.pt'
         torch.save(checkpoint, latest_path)
-        logger.info(f'Saved latest checkpoint to {latest_path} with hr {current_hit_ratio:.6f}')
+        logger.info(f'Saved latest checkpoint to {latest_path} with recall {current_hit_ratio:.6f}')
 
         # 保存最佳检查点
         if is_best:
             best_path = self.save_dir / 'best.pt'
             torch.save(checkpoint, best_path)
-            logger.info(f'Saved best checkpoint to {best_path} with hr {current_hit_ratio:.6f}')
+            logger.info(f'Saved best checkpoint to {best_path} with recall {current_hit_ratio:.6f}')
 
     def load_checkpoint(self, checkpoint_path: str):
         """加载检查点"""
@@ -452,7 +463,7 @@ class Trainer:
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.global_step = checkpoint['global_step'] + 1
         self.start_epoch = checkpoint['epoch'] + 1
-        self.best_hit_ratio = checkpoint['best_hit_ratio']
+        self.best_recall = checkpoint.get('best_recall', checkpoint.get('best_hit_ratio', 0.0))
         logger.info(f'Loaded checkpoint from {checkpoint_path}')
         return checkpoint['metrics']
 
@@ -469,33 +480,92 @@ class Trainer:
                 train_log = f'Epoch {epoch + 1} - Train: loss={train_metrics["train_loss"]:.4f}, acc={train_metrics["train_acc"]:.4f}'
                 logger.info(train_log)
 
-            # 评估
-            if (epoch + 1) % self.eval_interval == 0:
+            # 评估：需要同时满足 eval_interval 和 eval_start_epoch
+            if (epoch + 1) >= self.eval_start_epoch and (epoch + 1) % self.eval_interval == 0:
                 valid_metrics = self.evaluate(epoch)
+
+                # 早停判断需要所有进程同步
+                should_stop = torch.tensor([0], device=self.device)
 
                 if is_main_process():
                     # 格式化输出验证指标
                     valid_log = (f'Epoch {epoch + 1} - Valid: loss={valid_metrics["valid_loss"]:.4f}, '
                                  f'acc={valid_metrics["valid_acc"]:.4f}')
                     for k in self.k_list:
-                        valid_log += f', hit@{k}={valid_metrics[f"valid_hit@{k}"]:.4f}'
+                        valid_log += f', Recall@{k}={valid_metrics[f"valid_Recall@{k}"]:.4f}'
+                        valid_log += f', NDCG@{k}={valid_metrics[f"valid_NDCG@{k}"]:.4f}'
                     logger.info(valid_log)
 
-                    # 检查是否是最佳模型
-                    current_hit_ratio = valid_metrics[f'valid_hit@{self.k_list[2]}']
-                    is_best = current_hit_ratio > self.best_hit_ratio
+                    # 检查是否是最佳模型（以Recall@10为准）
+                    current_recall = valid_metrics[f'valid_Recall@{self.k_list[-1]}']
+                    is_best = current_recall > self.best_recall
                     if is_best:
-                        self.best_hit_ratio = current_hit_ratio
-                        logger.info(f'New best Hit@{self.k_list[2]}: {self.best_hit_ratio:.4f}')
+                        self.best_recall = current_recall
+                        self.no_improve_count = 0
+                        logger.info(f'New best Recall@{self.k_list[-1]}: {self.best_recall:.4f}')
+                    else:
+                        self.no_improve_count += 1
+                        logger.info(f'No improvement for {self.no_improve_count} eval(s)')
 
                     # 保存检查点
-                    self.save_checkpoint(epoch, valid_metrics, is_best, current_hit_ratio)
+                    self.save_checkpoint(epoch, valid_metrics, is_best, current_recall)
+
+                    # 检查早停
+                    if self.early_stop > 0 and self.no_improve_count >= self.early_stop:
+                        logger.info(f'Early stopping triggered after {self.no_improve_count} evals without improvement')
+                        should_stop[0] = 1
+
+                # 广播早停信号到所有进程
+                if dist.is_initialized():
+                    dist.broadcast(should_stop, src=0)
+
+                if should_stop[0].item() == 1:
+                    break
 
         if is_main_process():
             logger.info('Training completed!')
-            logger.info(f'Best Hit@{self.k_list[2]}: {self.best_hit_ratio:.4f}')
+            logger.info(f'Best Recall@{self.k_list[-1]}: {self.best_recall:.4f}')
             self.writer.close()
             logger.info('TensorBoard writer closed')
+
+    @torch.no_grad()
+    def test(self, test_loader: DataLoader) -> Dict[str, float]:
+        """训练结束后加载best checkpoint在测试集上评估"""
+        # 加载best checkpoint
+        best_path = self.save_dir / 'best.pt'
+        if not best_path.exists():
+            if is_main_process():
+                logger.warning(f'Best checkpoint not found at {best_path}, skipping test.')
+            return {}
+
+        if is_main_process():
+            logger.info('=' * 80)
+            logger.info(f'Testing with best checkpoint (Recall@{self.k_list[-1]}={self.best_recall:.4f})')
+            logger.info('=' * 80)
+
+        checkpoint = torch.load(best_path, map_location=self.device, weights_only=False)
+        if isinstance(self.model, DDP):
+            self.model.module.load_state_dict(checkpoint['model_state_dict'])
+        else:
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+
+        # 复用evaluate逻辑，临时替换valid_loader
+        original_loader = self.valid_loader
+        self.valid_loader = test_loader
+        test_metrics = self.evaluate(epoch=0)
+        self.valid_loader = original_loader
+
+        # 将key从 valid_ 改为 test_
+        test_metrics = {k.replace('valid_', 'test_'): v for k, v in test_metrics.items()}
+
+        if is_main_process():
+            test_log = 'Test Results:'
+            for k in self.k_list:
+                test_log += f' Recall@{k}={test_metrics[f"test_Recall@{k}"]:.4f}'
+                test_log += f' NDCG@{k}={test_metrics[f"test_NDCG@{k}"]:.4f}'
+            logger.info(test_log)
+
+        return test_metrics
 
 def ddp_worker(
         rank: int,
@@ -522,7 +592,11 @@ def ddp_worker(
         save_dir: str,
         resume_from: Optional[str],
         eval_interval: int,
+        eval_start_epoch: int,
         k_list: Tuple[int, ...],
+        sid_to_item: Dict[tuple, int],
+        trie: Optional[dict],
+        early_stop: int,
 ):
     """DDP训练工作函数，每个GPU进程执行此函数"""
     # 初始化DDP
@@ -621,7 +695,11 @@ def ddp_worker(
         min_lr_ratio=min_lr_ratio,
         save_dir=save_dir,
         eval_interval=eval_interval,
+        eval_start_epoch=eval_start_epoch,
         k_list=k_list,
+        sid_to_item=sid_to_item,
+        trie=trie,
+        early_stop=early_stop,
     )
 
     # 如果指定了恢复路径，则加载检查点
@@ -630,6 +708,35 @@ def ddp_worker(
 
     # 开始训练
     trainer.train()
+
+    # 训练结束后在测试集上评估
+    if data_format == 'json':
+        test_dataset = JSONOneRecDataset(
+            dataset=dataset_name,
+            data_path=data_path,
+            mode='test',
+            max_hist_len=max_hist_len,
+            target_type_num=model_config.target_type_num
+        )
+
+        test_sampler = DistributedSampler(
+            test_dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=False,
+            drop_last=False,
+            seed=42,
+        )
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=val_batch_size,
+            sampler=test_sampler,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+
+        trainer.test(test_loader)
 
     # 清理DDP
     cleanup_ddp()
@@ -657,8 +764,12 @@ def train_ddp(
         save_dir: str,
         resume_from: Optional[str],
         eval_interval: int,
+        eval_start_epoch: int,
         k_list: Tuple[int, ...],
+        sid_to_item: Dict[tuple, int],
         world_size: int,
+        trie: Optional[dict] = None,
+        early_stop: int = 0,
 ):
     """DDP多卡训练入口函数"""
     import torch.multiprocessing as mp
@@ -707,7 +818,11 @@ def train_ddp(
             save_dir,
             resume_from,
             eval_interval,
+            eval_start_epoch,
             k_list,
+            sid_to_item,
+            trie,
+            early_stop,
         ),
         nprocs=world_size,
         join=True
@@ -844,14 +959,36 @@ if __name__ == '__main__':
                         help='推理批次大小')
     parser.add_argument('--num_workers', type=int, default=0,
                         help='数据加载的工作进程数')
-    parser.add_argument('--max_hist_len', type=int, default=800,
+    parser.add_argument('--max_hist_len', type=int, default=50,
                         help='历史最大长度（物品数量）')
-    parser.add_argument('--max_hist_video_len', type=int, default=800,
+    parser.add_argument('--max_hist_video_len', type=int, default=50,
                         help='历史video最大长度（兼容旧参数）')
     parser.add_argument('--target_type_num', type=int, default=1,
                         help='动作类型数目')
     parser.add_argument('--dropout', type=float, default=0.0,
                         help='Dropout rate')
+    parser.add_argument('--num_epochs', type=int, default=200,
+                        help='训练总轮数')
+    parser.add_argument('--learning_rate', type=float, default=5e-4,
+                        help='学习率')
+    parser.add_argument('--weight_decay', type=float, default=0.1,
+                        help='权重衰减')
+    parser.add_argument('--warmup_ratio', type=float, default=0.01,
+                        help='Warmup步数占总步数的比例')
+    parser.add_argument('--min_lr_ratio', type=float, default=0.1,
+                        help='最小学习率与初始学习率的比例')
+    parser.add_argument('--eval_interval', type=int, default=10,
+                        help='每隔多少个epoch评估一次')
+    parser.add_argument('--eval_start_epoch', type=int, default=10,
+                        help='从第几个epoch开始评估')
+    parser.add_argument('--topk_list', type=int, nargs='+', default=[5, 10],
+                        help='评估时使用的top-k列表')
+    parser.add_argument('--beam_size', type=int, default=20,
+                        help='Beam search的beam大小')
+    parser.add_argument('--early_stop', type=int, default=0,
+                        help='连续多少次eval不提升则早停，0表示不启用')
+    parser.add_argument('--seed', type=int, default=2025,
+                        help='随机种子')
 
     args = parser.parse_args()
 
@@ -859,6 +996,11 @@ if __name__ == '__main__':
     config = ModelConfig()
     config.target_type_num = args.target_type_num
     config.dropout = args.dropout
+    config.beam_size = args.beam_size
+
+    # 设置随机种子
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
 
     if args.mode == 'train':
         # ==================== 训练模式 ====================
@@ -896,6 +1038,37 @@ if __name__ == '__main__':
             val_indices = None
             parquet_path = None
 
+            # 构建SID→item反解映射（用于评估时反解SID为item ID）
+            # item_to_sid中的value已经是int list，构建反向映射
+            # 使用交互频率解决碰撞：频率最高的item作为canonical item
+            from collections import Counter
+            item_freq = Counter()
+            for uid, item_ids in train_dataset.inters.items():
+                for item_id in item_ids:
+                    item_freq[str(item_id)] += 1
+
+            sid_to_item: Dict[tuple, int] = {}
+            for item_id_str, sid_codes in train_dataset.item_to_sid.items():
+                sid_tuple = tuple(sid_codes)
+                item_id_int = int(item_id_str)
+                if sid_tuple not in sid_to_item:
+                    sid_to_item[sid_tuple] = item_id_int
+                else:
+                    # 碰撞：选交互频率更高的
+                    existing = str(sid_to_item[sid_tuple])
+                    if item_freq[item_id_str] > item_freq[existing]:
+                        sid_to_item[sid_tuple] = item_id_int
+
+            logger.info(f"SID反解映射: {len(sid_to_item)} unique SIDs (from {len(train_dataset.item_to_sid)} items)")
+
+            # 构建 Trie 用于 beam search 约束
+            trie = {}
+            for item_id_str, sid_codes in train_dataset.item_to_sid.items():
+                node = trie
+                for code in sid_codes:
+                    node = node.setdefault(code, {})
+            logger.info(f"Trie 构建完成: {len(trie)} first-level nodes")
+
         else:
             # ===== Parquet格式（原OneRec） =====
             parquet_path = args.train_parquet
@@ -925,6 +1098,9 @@ if __name__ == '__main__':
             logger.info(f"训练集大小: {len(train_indices)}")
             logger.info(f"验证集大小: {len(val_indices)}")
 
+            sid_to_item = {}  # Parquet格式暂不支持SID反解
+            trie = None  # Parquet格式暂不支持Trie约束
+
         # ✅ 启动DDP训练
         train_ddp(
             data_format=args.data_format,
@@ -940,16 +1116,20 @@ if __name__ == '__main__':
             batch_size=args.batch_size,
             val_batch_size=args.val_batch_size,
             num_workers=args.num_workers,
-            learning_rate=1e-3,
-            weight_decay=0.1,
-            num_epochs=20,
-            warmup_ratio=0.01,
-            min_lr_ratio=0.1,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            num_epochs=args.num_epochs,
+            warmup_ratio=args.warmup_ratio,
+            min_lr_ratio=args.min_lr_ratio,
             save_dir=args.save_dir,
             resume_from=None,
-            eval_interval=1,
-            k_list=(1, 5, 10),
-            world_size=None
+            eval_interval=args.eval_interval,
+            eval_start_epoch=args.eval_start_epoch,
+            k_list=tuple(args.topk_list),
+            sid_to_item=sid_to_item,
+            world_size=None,
+            trie=trie,
+            early_stop=args.early_stop,
         )
         
     elif args.mode == 'infer':
@@ -970,7 +1150,7 @@ if __name__ == '__main__':
         model = OneRecV2(model_config).bfloat16()
         model.load_state_dict(checkpoint['model_state_dict'])
 
-        logger.info(f"成功加载模型，epoch: {checkpoint['epoch']}, best_hit_ratio: {checkpoint['best_hit_ratio']:.4f}")
+        logger.info(f"成功加载模型，epoch: {checkpoint['epoch']}, best_recall: {checkpoint.get('best_recall', checkpoint.get('best_hit_ratio', 0.0)):.4f}")
 
         # 创建测试数据集
         logger.info("加载测试数据集...")
