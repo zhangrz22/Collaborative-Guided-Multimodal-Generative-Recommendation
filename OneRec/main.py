@@ -268,11 +268,11 @@ class Trainer:
                     'lr': f'{self.scheduler.get_last_lr()[0]:.6f}'
                 })
 
-        # 统一计算所有平均指标
-        metrics = {
-            f'train_{key}': metric.compute().item()
-            for key, metric in metrics_dict.items()
-        }
+        # 统一计算所有平均指标（手动计算，避免 compute() 触发隐式 all_gather）
+        metrics = {}
+        for key, metric in metrics_dict.items():
+            w = metric.weight.item()
+            metrics[f'train_{key}'] = (metric.mean_value.item() / w) if w > 0 else 0.0
 
         return metrics
 
@@ -367,7 +367,9 @@ class Trainer:
             if is_main_process():
                 postfix = {'loss': f'{loss.item():.4f}'}
                 for k in self.k_list:
-                    postfix[f'R@{k}'] = f'{metrics_dict[f"Recall@{k}"].compute().item():.4f}'
+                    # 不要调用 compute()，它会触发隐式 all_gather 导致 DDP 死锁
+                    recall_val = metrics_dict[f'Recall@{k}'].mean_value.item() / max(metrics_dict[f'Recall@{k}'].weight.item(), 1)
+                    postfix[f'R@{k}'] = f'{recall_val:.4f}'
                 pbar.set_postfix(postfix)
 
         # 同步所有进程的指标
@@ -376,11 +378,11 @@ class Trainer:
                 dist.all_reduce(metric.mean_value, op=dist.ReduceOp.SUM)
                 dist.all_reduce(metric.weight, op=dist.ReduceOp.SUM)
 
-        # 统一计算所有平均指标
-        metrics = {
-            f'valid_{key}': metric.compute().item()
-            for key, metric in metrics_dict.items()
-        }
+        # 统一计算所有平均指标（手动计算，避免 compute() 触发隐式 all_gather）
+        metrics = {}
+        for key, metric in metrics_dict.items():
+            w = metric.weight.item()
+            metrics[f'valid_{key}'] = (metric.mean_value.item() / w) if w > 0 else 0.0
 
         # 只在主进程记录到 TensorBoard
         if is_main_process() and self.writer is not None:
