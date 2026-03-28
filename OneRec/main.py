@@ -281,12 +281,6 @@ class Trainer:
         """分布式评估函数 - 使用SID反解为item ID后计算Recall和NDCG"""
         self.model.eval()
 
-        # 获取底层模型（不经过 DDP 包装，避免 eval 时触发不必要的 NCCL 同步）
-        if isinstance(self.model, DDP):
-            model = self.model.module
-        else:
-            model = self.model
-
         # 设置验证集的 epoch（重要！确保不同进程处理不同数据）
         if dist.is_initialized() and hasattr(self.valid_loader.sampler, 'set_epoch'):
             self.valid_loader.sampler.set_epoch(epoch)
@@ -321,8 +315,8 @@ class Trainer:
             target_sids = target_sids.to(self.device)
             target_type = target_type.to(self.device)
 
-            # 计算验证损失（用底层模型，不走 DDP）
-            outputs = model(
+            # 计算验证损失
+            outputs = self.model(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
                 target_sids=target_sids,
@@ -337,6 +331,11 @@ class Trainer:
             metrics_dict['acc'].update(all_correct, weight=batch_size)
 
             # Beam Search 生成
+            if isinstance(self.model, DDP):
+                model = self.model.module
+            else:
+                model = self.model
+
             gen_outputs = model.generate(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
@@ -482,8 +481,14 @@ class Trainer:
             if (epoch + 1) >= self.eval_start_epoch and (epoch + 1) % self.eval_interval == 0:
                 valid_metrics = self.evaluate(epoch)
 
-                # 早停判断需要所有进程同步
-                should_stop = torch.tensor([0], device=self.device)
+                # all_reduce 后各 rank 的 metrics 完全一致，所有 rank 各自判断即可
+                current_recall = valid_metrics[f'valid_Recall@{self.k_list[-1]}']
+                is_best = current_recall > self.best_recall
+                if is_best:
+                    self.best_recall = current_recall
+                    self.no_improve_count = 0
+                else:
+                    self.no_improve_count += 1
 
                 if is_main_process():
                     # 格式化输出验证指标
@@ -494,30 +499,18 @@ class Trainer:
                         valid_log += f', NDCG@{k}={valid_metrics[f"valid_NDCG@{k}"]:.4f}'
                     logger.info(valid_log)
 
-                    # 检查是否是最佳模型（以Recall@10为准）
-                    current_recall = valid_metrics[f'valid_Recall@{self.k_list[-1]}']
-                    is_best = current_recall > self.best_recall
                     if is_best:
-                        self.best_recall = current_recall
-                        self.no_improve_count = 0
                         logger.info(f'New best Recall@{self.k_list[-1]}: {self.best_recall:.4f}')
                     else:
-                        self.no_improve_count += 1
                         logger.info(f'No improvement for {self.no_improve_count} eval(s)')
 
                     # 保存检查点
                     self.save_checkpoint(epoch, valid_metrics, is_best, current_recall)
 
-                    # 检查早停
-                    if self.early_stop > 0 and self.no_improve_count >= self.early_stop:
+                # 早停：所有 rank 各自判断（metrics 一致所以结果一致），不需要 broadcast
+                if self.early_stop > 0 and self.no_improve_count >= self.early_stop:
+                    if is_main_process():
                         logger.info(f'Early stopping triggered after {self.no_improve_count} evals without improvement')
-                        should_stop[0] = 1
-
-                # 广播早停信号到所有进程
-                if dist.is_initialized():
-                    dist.broadcast(should_stop, src=0)
-
-                if should_stop[0].item() == 1:
                     break
 
         if is_main_process():
