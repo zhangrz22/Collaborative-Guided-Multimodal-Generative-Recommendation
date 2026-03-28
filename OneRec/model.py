@@ -337,75 +337,40 @@ class OneRecV2(nn.Module):
             **{f"position_loss/position_loss_{p}": loss_per_token[p] for p in range(self.config.semantic_token_num)},
         }
 
-    def _get_trie_allowed_tokens(self, trie, path_tokens, bs, num_beams, position):
+    def _build_trie_masks(self, trie, vocab_size, num_positions):
         """
-        根据当前 prefix 从 trie 中查询每个 beam 允许的 token set.
-
-        Args:
-            trie: 嵌套 dict，key 是 token id (int)
-            path_tokens: [bs, beam_size, position] 已生成的 token
-            bs: batch size
-            num_beams: beam size (position 0 时为 1)
-            position: 当前要生成的位置 (0-indexed)
+        将 trie 预编译为 prefix → allowed_mask 的查找表.
+        每个 prefix (tuple of ints) 映射到一个 bool tensor [vocab_size].
+        position 0 的 key 是 ()（空 tuple）.
 
         Returns:
-            allowed: list of sets, length = bs * num_beams
+            dict: {prefix_tuple: torch.BoolTensor of shape [vocab_size]}
         """
-        allowed = []
-        if position == 0:
-            # 第一层：trie 根节点的所有 key
-            root_keys = set(trie.keys())
-            for _ in range(bs * num_beams):
-                allowed.append(root_keys)
-        else:
-            # path_tokens: [bs, beam_size, position]
-            for b in range(bs):
-                for beam in range(num_beams):
-                    node = trie
-                    valid = True
-                    for p in range(position):
-                        tok = path_tokens[b, beam, p].item()
-                        if tok in node:
-                            node = node[tok]
-                        else:
-                            valid = False
-                            break
-                    if valid and len(node) > 0:
-                        allowed.append(set(node.keys()))
-                    else:
-                        # Fallback: 不做约束（允许所有 token）
-                        allowed.append(None)
-        return allowed
+        prefix_masks = {}
 
-    def _apply_trie_mask(self, token_probs, allowed_list, device):
-        """
-        对 log_softmax 后的概率应用 trie mask.
+        def _walk(node, prefix):
+            keys = list(node.keys())
+            if keys:
+                mask = torch.zeros(vocab_size, dtype=torch.bool)
+                for k in keys:
+                    mask[k] = True
+                prefix_masks[prefix] = mask
+                for k in keys:
+                    if isinstance(node[k], dict) and len(node[k]) > 0:
+                        _walk(node[k], prefix + (k,))
 
-        Args:
-            token_probs: [bs * beam_size, vocab_size] log probabilities
-            allowed_list: list of sets (or None for no constraint)
-            device: torch device
-
-        Returns:
-            masked token_probs: [bs * beam_size, vocab_size]
-        """
-        mask = torch.zeros_like(token_probs, dtype=torch.bool)
-        for idx, allowed_set in enumerate(allowed_list):
-            if allowed_set is None:
-                # No constraint — allow all
-                mask[idx, :] = True
-            else:
-                allowed_tensor = torch.tensor(list(allowed_set), dtype=torch.long, device=device)
-                mask[idx, allowed_tensor] = True
-        # Set disallowed tokens to -inf
-        token_probs = token_probs.masked_fill(~mask, float('-inf'))
-        return token_probs
+        _walk(trie, ())
+        return prefix_masks
 
     def generate(self, his_sids, his_pid_types, target_type, trie=None):
         bs = his_sids.shape[0]
 
         context_list = self.context_processor(his_sids, his_pid_types)
         use_trie = trie is not None
+
+        # 预编译 trie 为 prefix → mask 查找表
+        if use_trie:
+            prefix_masks = self._build_trie_masks(trie, self.config.vocab_size, self.config.semantic_token_num)
 
         all_self_kv_cache = [None] * len(self.layers)
         for i in range(self.config.semantic_token_num):
@@ -431,10 +396,30 @@ class OneRecV2(nn.Module):
             if use_trie:
                 # === Trie 约束模式：跳过 precut，直接在全 vocab 上做 trie mask + beam 选择 ===
                 num_beams = 1 if i == 0 else self.config.beam_size
-                allowed_list = self._get_trie_allowed_tokens(
-                    trie, path_tokens if i > 0 else None, bs, num_beams, i
-                )
-                token_probs = self._apply_trie_mask(token_probs, allowed_list, h.device)
+                n = bs * num_beams  # total number of beams
+
+                # 构建 mask [n, vocab_size]
+                mask = torch.zeros(n, self.config.vocab_size, dtype=torch.bool, device=h.device)
+                if i == 0:
+                    # 所有 beam 共享同一个 root mask
+                    root_mask = prefix_masks.get((), None)
+                    if root_mask is not None:
+                        mask[:] = root_mask.to(h.device)
+                    else:
+                        mask[:] = True
+                else:
+                    # path_tokens: [bs, beam_size, i] — 用 CPU 查表，批量写入 GPU mask
+                    pt_cpu = path_tokens.cpu()
+                    for b in range(bs):
+                        for beam in range(self.config.beam_size):
+                            prefix = tuple(pt_cpu[b, beam].tolist())
+                            m = prefix_masks.get(prefix, None)
+                            if m is not None:
+                                mask[b * self.config.beam_size + beam] = m.to(h.device)
+                            else:
+                                mask[b * self.config.beam_size + beam] = True
+
+                token_probs = token_probs.masked_fill(~mask, float('-inf'))
 
                 if i == 0:
                     topk_probs, topk_tokens = torch.topk(token_probs, k=self.config.beam_size)  # [bs, beam_size]
