@@ -109,13 +109,11 @@ class Trainer:
             eval_start_epoch: int,
             k_list: Tuple[int, ...],
             sid_to_item: Dict[tuple, int],
-            trie: Optional[dict] = None,
             early_stop: int = 0,
     ):
         self.k_list = k_list
         self.model = model
         self.sid_to_item = sid_to_item
-        self.trie = trie
         self.early_stop = early_stop
         self.no_improve_count = 0
         self.eval_start_epoch = eval_start_epoch
@@ -341,8 +339,7 @@ class Trainer:
             gen_outputs = model.generate(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
-                target_type=target_type,
-                trie=self.trie
+                target_type=target_type
             )
 
             pred_tokens = gen_outputs['tokens']  # [bs, beam_size, semantic_token_num]
@@ -595,7 +592,6 @@ def ddp_worker(
         eval_start_epoch: int,
         k_list: Tuple[int, ...],
         sid_to_item: Dict[tuple, int],
-        trie: Optional[dict],
         early_stop: int,
 ):
     """DDP训练工作函数，每个GPU进程执行此函数"""
@@ -698,7 +694,6 @@ def ddp_worker(
         eval_start_epoch=eval_start_epoch,
         k_list=k_list,
         sid_to_item=sid_to_item,
-        trie=trie,
         early_stop=early_stop,
     )
 
@@ -768,7 +763,6 @@ def train_ddp(
         k_list: Tuple[int, ...],
         sid_to_item: Dict[tuple, int],
         world_size: int,
-        trie: Optional[dict] = None,
         early_stop: int = 0,
 ):
     """DDP多卡训练入口函数"""
@@ -821,7 +815,6 @@ def train_ddp(
             eval_start_epoch,
             k_list,
             sid_to_item,
-            trie,
             early_stop,
         ),
         nprocs=world_size,
@@ -1061,14 +1054,6 @@ if __name__ == '__main__':
 
             logger.info(f"SID反解映射: {len(sid_to_item)} unique SIDs (from {len(train_dataset.item_to_sid)} items)")
 
-            # 构建 Trie 用于 beam search 约束
-            trie = {}
-            for item_id_str, sid_codes in train_dataset.item_to_sid.items():
-                node = trie
-                for code in sid_codes:
-                    node = node.setdefault(code, {})
-            logger.info(f"Trie 构建完成: {len(trie)} first-level nodes")
-
         else:
             # ===== Parquet格式（原OneRec） =====
             parquet_path = args.train_parquet
@@ -1099,7 +1084,6 @@ if __name__ == '__main__':
             logger.info(f"验证集大小: {len(val_indices)}")
 
             sid_to_item = {}  # Parquet格式暂不支持SID反解
-            trie = None  # Parquet格式暂不支持Trie约束
 
         # ✅ 启动DDP训练
         train_ddp(
@@ -1128,7 +1112,6 @@ if __name__ == '__main__':
             k_list=tuple(args.topk_list),
             sid_to_item=sid_to_item,
             world_size=None,
-            trie=trie,
             early_stop=args.early_stop,
         )
         
