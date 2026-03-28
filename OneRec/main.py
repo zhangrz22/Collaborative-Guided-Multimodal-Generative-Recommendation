@@ -110,6 +110,7 @@ class Trainer:
             k_list: Tuple[int, ...],
             sid_to_item: Dict[tuple, int],
             early_stop: int = 0,
+            test_loader: DataLoader = None,
     ):
         self.k_list = k_list
         self.model = model
@@ -125,6 +126,7 @@ class Trainer:
         self.device = self.config.device
         self.train_loader = train_loader
         self.valid_loader = valid_loader
+        self.test_loader = test_loader
         self.num_epochs = num_epochs
         self.eval_interval = eval_interval
         self.save_dir = Path(save_dir)
@@ -277,13 +279,16 @@ class Trainer:
         return metrics
 
     @torch.no_grad()
-    def evaluate(self, epoch: int) -> Dict[str, float]:
+    def evaluate(self, epoch: int, mode: str = 'Valid', loader: DataLoader = None) -> Dict[str, float]:
         """分布式评估函数 - 使用SID反解为item ID后计算Recall和NDCG"""
         self.model.eval()
 
+        eval_loader = loader if loader is not None else self.valid_loader
+        prefix = mode.lower()
+
         # 设置验证集的 epoch（重要！确保不同进程处理不同数据）
-        if dist.is_initialized() and hasattr(self.valid_loader.sampler, 'set_epoch'):
-            self.valid_loader.sampler.set_epoch(epoch)
+        if dist.is_initialized() and hasattr(eval_loader.sampler, 'set_epoch'):
+            eval_loader.sampler.set_epoch(epoch)
 
         # 使用统一的字典管理所有 MeanMetric
         metrics_dict = {
@@ -300,9 +305,9 @@ class Trainer:
 
         # 只在主进程显示进度条
         if is_main_process():
-            pbar = tqdm(self.valid_loader, desc=f'Epoch {epoch + 1}/{self.num_epochs} [Valid]')
+            pbar = tqdm(eval_loader, desc=f'Epoch {epoch + 1}/{self.num_epochs} [{mode}]')
         else:
-            pbar = self.valid_loader
+            pbar = eval_loader
 
         for batch in pbar:
             # 从 tuple 加载数据
@@ -382,15 +387,15 @@ class Trainer:
         metrics = {}
         for key, metric in metrics_dict.items():
             w = metric.weight.item()
-            metrics[f'valid_{key}'] = (metric.mean_value.item() / w) if w > 0 else 0.0
+            metrics[f'{prefix}_{key}'] = (metric.mean_value.item() / w) if w > 0 else 0.0
 
         # 只在主进程记录到 TensorBoard
         if is_main_process() and self.writer is not None:
-            self.writer.add_scalar('Valid/loss', metrics['valid_loss'], epoch)
-            self.writer.add_scalar('Valid/accuracy', metrics['valid_acc'], epoch)
+            self.writer.add_scalar(f'{mode}/loss', metrics[f'{prefix}_loss'], epoch)
+            self.writer.add_scalar(f'{mode}/accuracy', metrics[f'{prefix}_acc'], epoch)
             for k in self.k_list:
-                self.writer.add_scalar(f'Valid/Recall@{k}', metrics[f'valid_Recall@{k}'], epoch)
-                self.writer.add_scalar(f'Valid/NDCG@{k}', metrics[f'valid_NDCG@{k}'], epoch)
+                self.writer.add_scalar(f'{mode}/Recall@{k}', metrics[f'{prefix}_Recall@{k}'], epoch)
+                self.writer.add_scalar(f'{mode}/NDCG@{k}', metrics[f'{prefix}_NDCG@{k}'], epoch)
 
         return metrics
 
@@ -483,6 +488,16 @@ class Trainer:
             if (epoch + 1) >= self.eval_start_epoch and (epoch + 1) % self.eval_interval == 0:
                 valid_metrics = self.evaluate(epoch)
 
+                # 同时在测试集上评估（仅记录，不影响早停判断）
+                if self.test_loader is not None:
+                    test_metrics = self.evaluate(epoch, mode='Test', loader=self.test_loader)
+                    if is_main_process():
+                        test_log = f'Epoch {epoch + 1} - Test:'
+                        for k in self.k_list:
+                            test_log += f' Recall@{k}={test_metrics[f"test_Recall@{k}"]:.4f}'
+                            test_log += f', NDCG@{k}={test_metrics[f"test_NDCG@{k}"]:.4f}'
+                        logger.info(test_log)
+
                 # all_reduce 后各 rank 的 metrics 完全一致，所有 rank 各自判断即可
                 current_recall = valid_metrics[f'valid_Recall@{self.k_list[-1]}']
                 is_best = current_recall > self.best_recall
@@ -542,14 +557,8 @@ class Trainer:
         else:
             self.model.load_state_dict(checkpoint['model_state_dict'])
 
-        # 复用evaluate逻辑，临时替换valid_loader
-        original_loader = self.valid_loader
-        self.valid_loader = test_loader
-        test_metrics = self.evaluate(epoch=0)
-        self.valid_loader = original_loader
-
-        # 将key从 valid_ 改为 test_
-        test_metrics = {k.replace('valid_', 'test_'): v for k, v in test_metrics.items()}
+        # 复用evaluate逻辑
+        test_metrics = self.evaluate(epoch=0, mode='Test', loader=test_loader)
 
         if is_main_process():
             test_log = 'Test Results:'
@@ -675,32 +684,8 @@ def ddp_worker(
         # persistent_workers=True,
     )
 
-    # 创建训练器
-    trainer = Trainer(
-        model=model,
-        train_loader=train_loader,
-        valid_loader=val_loader,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-        num_epochs=num_epochs,
-        warmup_ratio=warmup_ratio,
-        min_lr_ratio=min_lr_ratio,
-        save_dir=save_dir,
-        eval_interval=eval_interval,
-        eval_start_epoch=eval_start_epoch,
-        k_list=k_list,
-        sid_to_item=sid_to_item,
-        early_stop=early_stop,
-    )
-
-    # 如果指定了恢复路径，则加载检查点
-    if resume_from is not None:
-        trainer.load_checkpoint(resume_from)
-
-    # 开始训练
-    trainer.train()
-
-    # 训练结束后在测试集上评估
+    # 创建测试集loader（训练中每次验证时同步评估测试集，训练结束后也用于最终测试）
+    test_loader = None
     if data_format == 'json':
         test_dataset = JSONOneRecDataset(
             dataset=dataset_name,
@@ -727,6 +712,34 @@ def ddp_worker(
             pin_memory=True,
         )
 
+    # 创建训练器
+    trainer = Trainer(
+        model=model,
+        train_loader=train_loader,
+        valid_loader=val_loader,
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        num_epochs=num_epochs,
+        warmup_ratio=warmup_ratio,
+        min_lr_ratio=min_lr_ratio,
+        save_dir=save_dir,
+        eval_interval=eval_interval,
+        eval_start_epoch=eval_start_epoch,
+        k_list=k_list,
+        sid_to_item=sid_to_item,
+        early_stop=early_stop,
+        test_loader=test_loader,
+    )
+
+    # 如果指定了恢复路径，则加载检查点
+    if resume_from is not None:
+        trainer.load_checkpoint(resume_from)
+
+    # 开始训练
+    trainer.train()
+
+    # 训练结束后加载best checkpoint在测试集上最终评估
+    if test_loader is not None:
         trainer.test(test_loader)
 
     # 清理DDP
