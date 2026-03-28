@@ -281,6 +281,12 @@ class Trainer:
         """分布式评估函数 - 使用SID反解为item ID后计算Recall和NDCG"""
         self.model.eval()
 
+        # 获取底层模型（不经过 DDP 包装，避免 eval 时触发不必要的 NCCL 同步）
+        if isinstance(self.model, DDP):
+            model = self.model.module
+        else:
+            model = self.model
+
         # 设置验证集的 epoch（重要！确保不同进程处理不同数据）
         if dist.is_initialized() and hasattr(self.valid_loader.sampler, 'set_epoch'):
             self.valid_loader.sampler.set_epoch(epoch)
@@ -315,8 +321,8 @@ class Trainer:
             target_sids = target_sids.to(self.device)
             target_type = target_type.to(self.device)
 
-            # 计算训练损失
-            outputs = self.model(
+            # 计算验证损失（用底层模型，不走 DDP）
+            outputs = model(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
                 target_sids=target_sids,
@@ -331,11 +337,6 @@ class Trainer:
             metrics_dict['acc'].update(all_correct, weight=batch_size)
 
             # Beam Search 生成
-            if isinstance(self.model, DDP):
-                model = self.model.module
-            else:
-                model = self.model
-
             gen_outputs = model.generate(
                 his_sids=his_sids,
                 his_pid_types=his_pid_types,
