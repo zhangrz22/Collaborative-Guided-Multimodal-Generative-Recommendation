@@ -28,8 +28,9 @@ QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
 W_TEXT=${W_TEXT:-1.0}
 W_IMAGE=${W_IMAGE:-0.1}
 W_CF=${W_CF:-0.1}
-SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
+SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.005 0.01"}
 SK_ITERS=${SK_ITERS:-50}
+SK_START_RATIO=${SK_START_RATIO:-0.2}
 KMEANS_ITERS=${KMEANS_ITERS:-100}
 N_CLUSTERS=${N_CLUSTERS:-10}
 
@@ -85,6 +86,7 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --w_cf "${W_CF}" \
   --sk_epsilons ${SK_EPSILONS} \
   --sk_iters "${SK_ITERS}" \
+  --sk_start_ratio "${SK_START_RATIO}" \
   --kmeans_iters "${KMEANS_ITERS}" \
   --n_clusters "${N_CLUSTERS}" \
   --epochs "${EPOCHS}" \

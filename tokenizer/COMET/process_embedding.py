@@ -132,11 +132,12 @@ def refine_collisions(model, text_emb, image_emb, cf_emb, image_mask,
     best_rate, _, best_max = collision_stats(best_codes)
     print(f"[Refine] initial collision_rate={best_rate:.4f}, max_dup={best_max}")
 
-    # Enable Sinkhorn on last layer only
-    for vq in model.rq.vq_layers[:-1]:
+    # Enable Sinkhorn on last two layers with increasing epsilon
+    # (later layers have less semantic impact, can be more aggressive)
+    for vq in model.rq.vq_layers[:-2]:
         vq.sk_epsilon = 0.0
-    if model.rq.vq_layers[-1].sk_epsilon == 0.0:
-        model.rq.vq_layers[-1].sk_epsilon = 0.003
+    model.rq.vq_layers[-2].sk_epsilon = 0.005
+    model.rq.vq_layers[-1].sk_epsilon = 0.01
 
     for r in range(1, max_rounds + 1):
         rate, collision_groups, max_dup = collision_stats(codes)
@@ -211,8 +212,14 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
     mask_tensor = torch.from_numpy(image_mask).to(device)
 
     best_recon = float("inf")
+    sk_start_epoch = int(args.epochs * (1.0 - args.sk_start_ratio))
+    if args.sk_start_ratio > 0:
+        print(f"Sinkhorn will be enabled from epoch {sk_start_epoch + 1}/{args.epochs} "
+              f"(last {args.sk_start_ratio * 100:.0f}%)")
+
     for epoch in range(1, args.epochs + 1):
         model.train()
+        use_sk = epoch > sk_start_epoch and args.sk_start_ratio > 0
 
         # Re-cluster codebook each epoch for diversity loss
         cluster_labels_list = compute_cluster_labels(model, n_clusters=args.n_clusters)
@@ -234,7 +241,7 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
 
             optimizer.zero_grad(set_to_none=True)
             out = model(batch_text, batch_image, batch_cf, image_mask=batch_mask,
-                        cluster_labels_list=cluster_labels_list)
+                        cluster_labels_list=cluster_labels_list, use_sk=use_sk)
             out["loss"].backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -264,7 +271,8 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
 
         epoch_loss = total_loss / n
         epoch_recon = total_recon / n
-        print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={epoch_recon:.6f} "
+        sk_tag = " [SK]" if use_sk else ""
+        print(f"[Epoch {epoch}]{sk_tag} loss={epoch_loss:.6f} recon={epoch_recon:.6f} "
               f"(text={total_text_recon/n:.6f} image={total_image_recon/n:.6f} cf={total_cf_recon/n:.6f}) "
               f"vq={total_vq/n:.6f} lr={scheduler.get_last_lr()[0]:.2e} | {' '.join(usage_parts)}")
 
@@ -352,8 +360,10 @@ def parse_args():
     p.add_argument("--w_text", type=float, default=1.0, help="Weight for text reconstruction loss")
     p.add_argument("--w_image", type=float, default=0.1, help="Weight for image reconstruction loss")
     p.add_argument("--w_cf", type=float, default=0.1, help="Weight for CF reconstruction loss")
-    p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
+    p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.005, 0.01])
     p.add_argument("--sk_iters", type=int, default=50)
+    p.add_argument("--sk_start_ratio", type=float, default=0.2,
+                   help="Enable Sinkhorn during last N%% of training (0=disabled, 0.2=last 20%%)")
     p.add_argument("--kmeans_iters", type=int, default=100)
     p.add_argument("--n_clusters", type=int, default=10)
 

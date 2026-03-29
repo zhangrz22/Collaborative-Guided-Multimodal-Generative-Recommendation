@@ -421,16 +421,18 @@ class RQVAE(nn.Module):
         )
 
     def forward(self, text_emb, image_emb, cf_emb, image_mask=None,
-                cluster_labels_list=None):
+                cluster_labels_list=None, use_sk=False):
         """
         Args:
             text_emb:  [B, text_dim]
             image_emb: [B, image_dim]
             cf_emb:    [B, cf_dim]
             image_mask: [B] bool, True = missing image
+            use_sk:    bool, enable Sinkhorn balanced assignment in RQ
         """
         z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
-        z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list)
+        z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list,
+                                         use_sk=use_sk)
         z_q_st = z + (z_q - z).detach()
 
         # Multi-target reconstruction
