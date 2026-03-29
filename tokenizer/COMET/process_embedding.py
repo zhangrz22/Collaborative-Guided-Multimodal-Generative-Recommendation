@@ -217,6 +217,7 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
         # Shuffle and batch manually (to keep all modalities aligned)
         perm = np.random.permutation(n_items)
         total_loss = total_recon = total_vq = 0.0
+        total_text_recon = total_image_recon = total_cf_recon = 0.0
         n = 0
         code_counts = torch.zeros(len(args.n_e_list), max(args.n_e_list), dtype=torch.long)
 
@@ -240,6 +241,9 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
             total_loss += out["loss"].item() * bs
             total_recon += out["recon_loss"].item() * bs
             total_vq += out["quant_loss"].item() * bs
+            total_text_recon += out["text_recon_loss"].item() * bs
+            total_image_recon += out["image_recon_loss"].item() * bs
+            total_cf_recon += out["cf_recon_loss"].item() * bs
 
             codes = out["codes"].detach().cpu()
             for layer in range(codes.shape[1]):
@@ -257,6 +261,7 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
 
         epoch_loss = total_loss / n
         print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={total_recon/n:.6f} "
+              f"(text={total_text_recon/n:.6f} image={total_image_recon/n:.6f} cf={total_cf_recon/n:.6f}) "
               f"vq={total_vq/n:.6f} | {' '.join(usage_parts)}")
 
         if epoch_loss < best_loss:
@@ -336,6 +341,9 @@ def parse_args():
     p.add_argument("--dead_threshold", type=float, default=2.0)
     p.add_argument("--diversity_weight", type=float, default=0.0001)
     p.add_argument("--quant_loss_weight", type=float, default=1.0)
+    p.add_argument("--w_text", type=float, default=1.0, help="Weight for text reconstruction loss")
+    p.add_argument("--w_image", type=float, default=0.1, help="Weight for image reconstruction loss")
+    p.add_argument("--w_cf", type=float, default=0.1, help="Weight for CF reconstruction loss")
     p.add_argument("--sk_epsilons", type=float, nargs="+", default=[0.0, 0.0, 0.0, 0.003])
     p.add_argument("--sk_iters", type=int, default=50)
     p.add_argument("--kmeans_iters", type=int, default=100)
@@ -392,6 +400,9 @@ def main():
         sk_epsilons=args.sk_epsilons,
         sk_iters=args.sk_iters,
         quant_loss_weight=args.quant_loss_weight,
+        w_text=args.w_text,
+        w_image=args.w_image,
+        w_cf=args.w_cf,
     ).to(device)
 
     if args.load_model and os.path.exists(args.model_path):

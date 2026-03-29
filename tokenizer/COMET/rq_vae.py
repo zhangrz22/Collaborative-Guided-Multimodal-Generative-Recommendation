@@ -326,7 +326,8 @@ class RQVAE(nn.Module):
                  commitment_weight=0.25, ema_decay=0.99, dead_threshold=2.0,
                  diversity_weight=0.01,
                  sk_epsilons=None, sk_iters=50,
-                 quant_loss_weight=1.0):
+                 quant_loss_weight=1.0,
+                 w_text=1.0, w_image=0.1, w_cf=0.1):
         super().__init__()
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
@@ -334,6 +335,9 @@ class RQVAE(nn.Module):
             decoder_dims = [128, 256, 512, 1024]
 
         self.quant_loss_weight = quant_loss_weight
+        self.w_text = w_text
+        self.w_image = w_image
+        self.w_cf = w_cf
 
         # Encoder: COMET cross-attention fusion
         self.encoder = COMETFusion(
@@ -342,14 +346,28 @@ class RQVAE(nn.Module):
             dropout=fusion_dropout,
         )
 
-        # Decoder: reconstruct text embedding
+        # Text decoder (primary): e_dim -> text_dim
         dims_dec = [e_dim] + decoder_dims + [text_dim]
         dec = []
         for i in range(len(dims_dec) - 1):
             dec.append(nn.Linear(dims_dec[i], dims_dec[i + 1]))
             if i < len(dims_dec) - 2:
                 dec.append(nn.ReLU())
-        self.decoder = nn.Sequential(*dec)
+        self.text_decoder = nn.Sequential(*dec)
+
+        # Image decoder: e_dim -> image_dim (lighter MLP)
+        self.image_decoder = nn.Sequential(
+            nn.Linear(e_dim, d_model),
+            nn.ReLU(),
+            nn.Linear(d_model, image_dim),
+        )
+
+        # CF decoder: e_dim -> cf_dim (lightweight)
+        self.cf_decoder = nn.Sequential(
+            nn.Linear(e_dim, d_model // 2),
+            nn.ReLU(),
+            nn.Linear(d_model // 2, cf_dim),
+        )
 
         # Residual VQ
         self.rq = ResidualVQ(
@@ -372,15 +390,40 @@ class RQVAE(nn.Module):
         z = self.encoder(text_emb, image_emb, cf_emb, image_mask=image_mask)
         z_q, quant_loss, codes = self.rq(z, cluster_labels_list=cluster_labels_list)
         z_q_st = z + (z_q - z).detach()
-        x_rec = self.decoder(z_q_st)
 
-        # Reconstruct text embedding
-        recon_loss = F.mse_loss(x_rec, text_emb)
+        # Multi-target reconstruction
+        text_rec = self.text_decoder(z_q_st)
+        image_rec = self.image_decoder(z_q_st)
+        cf_rec = self.cf_decoder(z_q_st)
+
+        # Text recon loss (all items)
+        text_recon_loss = F.mse_loss(text_rec, text_emb)
+
+        # Image recon loss (only for items with valid images)
+        if image_mask is not None and image_mask.any():
+            valid_image = ~image_mask
+            if valid_image.any():
+                image_recon_loss = F.mse_loss(image_rec[valid_image],
+                                              image_emb[valid_image])
+            else:
+                image_recon_loss = torch.zeros((), device=text_emb.device)
+        else:
+            image_recon_loss = F.mse_loss(image_rec, image_emb)
+
+        # CF recon loss (all items)
+        cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
+
+        recon_loss = (self.w_text * text_recon_loss
+                      + self.w_image * image_recon_loss
+                      + self.w_cf * cf_recon_loss)
         loss = recon_loss + self.quant_loss_weight * quant_loss
 
         return {
             "loss": loss,
             "recon_loss": recon_loss.detach(),
+            "text_recon_loss": text_recon_loss.detach(),
+            "image_recon_loss": image_recon_loss.detach(),
+            "cf_recon_loss": cf_recon_loss.detach(),
             "quant_loss": quant_loss.detach(),
             "codes": codes,
         }

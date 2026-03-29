@@ -23,6 +23,9 @@ EMA_DECAY=${EMA_DECAY:-0.99}
 DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
 DIVERSITY_WEIGHT=${DIVERSITY_WEIGHT:-0.0001}
 QUANT_LOSS_WEIGHT=${QUANT_LOSS_WEIGHT:-1.0}
+W_TEXT=${W_TEXT:-1.0}
+W_IMAGE=${W_IMAGE:-0.1}
+W_CF=${W_CF:-0.1}
 SK_EPSILONS=${SK_EPSILONS:-"0.0 0.0 0.0 0.003"}
 SK_ITERS=${SK_ITERS:-50}
 KMEANS_ITERS=${KMEANS_ITERS:-100}
@@ -53,6 +56,7 @@ echo "  cf_ckpt=${CF_CKPT}"
 echo "  d_model=${D_MODEL}, n_heads=${N_HEADS}, fusion_dropout=${FUSION_DROPOUT}"
 echo "  n_e_list=${N_E_LIST}, e_dim=${E_DIM}, decoder_dims=${DECODER_DIMS}"
 echo "  diversity_weight=${DIVERSITY_WEIGHT}, n_clusters=${N_CLUSTERS}"
+echo "  w_text=${W_TEXT}, w_image=${W_IMAGE}, w_cf=${W_CF}"
 echo "  epochs=${EPOCHS}, batch=${BATCH_SIZE}, lr=${LR}"
 
 nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
@@ -72,6 +76,9 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --dead_threshold "${DEAD_THRESHOLD}" \
   --diversity_weight "${DIVERSITY_WEIGHT}" \
   --quant_loss_weight "${QUANT_LOSS_WEIGHT}" \
+  --w_text "${W_TEXT}" \
+  --w_image "${W_IMAGE}" \
+  --w_cf "${W_CF}" \
   --sk_epsilons ${SK_EPSILONS} \
   --sk_iters "${SK_ITERS}" \
   --kmeans_iters "${KMEANS_ITERS}" \
