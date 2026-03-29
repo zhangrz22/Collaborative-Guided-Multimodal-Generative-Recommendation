@@ -392,7 +392,7 @@ def main():
             eval_model = model.module if ddp else model
             val_recalls, val_ndcgs = evaluate(
                 eval_model,
-                valid_loader,
+                test_loader,
                 args.topk_list,
                 args.beam_size,
                 device,
@@ -400,8 +400,8 @@ def main():
                 prefix_allowed_tokens_fn,
                 sid_tuple_to_item,
             )
-            print(f"Valid Recall: {val_recalls}")
-            print(f"Valid NDCG: {val_ndcgs}")
+            print(f"Test Recall: {val_recalls}")
+            print(f"Test NDCG: {val_ndcgs}")
 
             cur_recall10 = val_recalls.get("Recall@10", -1.0)
             if cur_recall10 > best_recall10:
