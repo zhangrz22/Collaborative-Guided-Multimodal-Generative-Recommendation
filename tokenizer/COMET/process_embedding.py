@@ -331,11 +331,13 @@ def parse_args():
     p.add_argument("--d_model", type=int, default=256, help="Cross-attention dimension")
     p.add_argument("--n_heads", type=int, default=4, help="Number of attention heads")
     p.add_argument("--fusion_dropout", type=float, default=0.1, help="Dropout in cross-attention")
+    p.add_argument("--n_attn_layers", type=int, default=2, help="Number of stacked cross-attention layers")
+    p.add_argument("--text_n_tokens", type=int, default=4, help="Split text embedding into N tokens for KV")
 
     # Model
     p.add_argument("--n_e_list", type=int, nargs="+", default=[256, 256, 256, 256])
-    p.add_argument("--e_dim", type=int, default=32)
-    p.add_argument("--decoder_dims", type=int, nargs="+", default=[128, 256, 512, 1024])
+    p.add_argument("--e_dim", type=int, default=64)
+    p.add_argument("--decoder_dims", type=int, nargs="+", default=[256, 512, 1024, 2048])
     p.add_argument("--commitment_weight", type=float, default=0.25)
     p.add_argument("--ema_decay", type=float, default=0.99)
     p.add_argument("--dead_threshold", type=float, default=2.0)
@@ -391,6 +393,8 @@ def main():
         n_heads=args.n_heads,
         e_dim=args.e_dim,
         fusion_dropout=args.fusion_dropout,
+        n_attn_layers=args.n_attn_layers,
+        text_n_tokens=args.text_n_tokens,
         decoder_dims=args.decoder_dims,
         n_e_list=args.n_e_list,
         commitment_weight=args.commitment_weight,

@@ -13,11 +13,13 @@ CF_CKPT=${CF_CKPT:-/llm-reco-ssd-share/zhangrongzhou/Collaborative-Guided-Multim
 D_MODEL=${D_MODEL:-256}
 N_HEADS=${N_HEADS:-4}
 FUSION_DROPOUT=${FUSION_DROPOUT:-0.1}
+N_ATTN_LAYERS=${N_ATTN_LAYERS:-2}
+TEXT_N_TOKENS=${TEXT_N_TOKENS:-4}
 
 # Model
 N_E_LIST=${N_E_LIST:-"256 256 256 256"}
-E_DIM=${E_DIM:-32}
-DECODER_DIMS=${DECODER_DIMS:-"128 256 512 1024"}
+E_DIM=${E_DIM:-64}
+DECODER_DIMS=${DECODER_DIMS:-"256 512 1024 2048"}
 COMMITMENT_WEIGHT=${COMMITMENT_WEIGHT:-0.25}
 EMA_DECAY=${EMA_DECAY:-0.99}
 DEAD_THRESHOLD=${DEAD_THRESHOLD:-2.0}
@@ -53,7 +55,7 @@ echo "  image=${IMAGE_FILE}"
 echo "  output=${OUTPUT_FILE}"
 echo "  model=${MODEL_PATH}"
 echo "  cf_ckpt=${CF_CKPT}"
-echo "  d_model=${D_MODEL}, n_heads=${N_HEADS}, fusion_dropout=${FUSION_DROPOUT}"
+echo "  d_model=${D_MODEL}, n_heads=${N_HEADS}, n_attn_layers=${N_ATTN_LAYERS}, text_n_tokens=${TEXT_N_TOKENS}"
 echo "  n_e_list=${N_E_LIST}, e_dim=${E_DIM}, decoder_dims=${DECODER_DIMS}"
 echo "  diversity_weight=${DIVERSITY_WEIGHT}, n_clusters=${N_CLUSTERS}"
 echo "  w_text=${W_TEXT}, w_image=${W_IMAGE}, w_cf=${W_CF}"
@@ -68,6 +70,8 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
   --d_model "${D_MODEL}" \
   --n_heads "${N_HEADS}" \
   --fusion_dropout "${FUSION_DROPOUT}" \
+  --n_attn_layers "${N_ATTN_LAYERS}" \
+  --text_n_tokens "${TEXT_N_TOKENS}" \
   --n_e_list ${N_E_LIST} \
   --e_dim "${E_DIM}" \
   --decoder_dims ${DECODER_DIMS} \

@@ -244,35 +244,58 @@ class ResidualVQ(nn.Module):
 # ---------------------------------------------------------------------------
 
 class COMETFusion(nn.Module):
-    """Cross-attention fusion: CF embedding queries text + image features.
+    """Multi-layer cross-attention fusion: CF embedding queries text + image.
 
-    CF (128) -> Linear -> Query [B, 1, d_model]
-    Text (4096) -> Linear -> KV token 0
-    Image (768) -> Linear -> KV token 1
-    -> MultiheadAttention -> LayerNorm -> MLP -> z [B, e_dim]
+    Text (4096) is split into `text_n_tokens` chunks (e.g. 4 x 1024),
+    each projected to d_model, giving richer KV context for attention.
+    Image (768) contributes 1 KV token. CF (128) is the query.
+
+    Multiple cross-attention layers are stacked, each followed by a
+    feed-forward sub-layer (Pre-LN Transformer decoder style).
     """
 
     def __init__(self, text_dim=4096, image_dim=768, cf_dim=128,
-                 d_model=256, n_heads=4, e_dim=32, dropout=0.1):
+                 d_model=256, n_heads=4, e_dim=64, dropout=0.1,
+                 n_attn_layers=2, text_n_tokens=4):
         super().__init__()
         self.d_model = d_model
+        self.text_n_tokens = text_n_tokens
 
-        # Projection layers
-        self.text_proj = nn.Linear(text_dim, d_model)
+        # Text: split into chunks then project each chunk
+        assert text_dim % text_n_tokens == 0, \
+            f"text_dim ({text_dim}) must be divisible by text_n_tokens ({text_n_tokens})"
+        self.text_chunk_dim = text_dim // text_n_tokens
+        self.text_proj = nn.Linear(self.text_chunk_dim, d_model)
+
+        # Image & CF projection (single token each)
         self.image_proj = nn.Linear(image_dim, d_model)
         self.cf_proj = nn.Linear(cf_dim, d_model)
 
         # Learnable padding for missing image embeddings
         self.image_padding = nn.Parameter(torch.zeros(1, image_dim))
 
-        # Cross-attention: CF queries text+image
-        self.cross_attn = nn.MultiheadAttention(
-            embed_dim=d_model, num_heads=n_heads,
-            dropout=dropout, batch_first=True,
-        )
-        self.layer_norm = nn.LayerNorm(d_model)
+        # Stacked cross-attention layers (Pre-LN style)
+        self.layers = nn.ModuleList()
+        for _ in range(n_attn_layers):
+            self.layers.append(nn.ModuleDict({
+                "norm_q": nn.LayerNorm(d_model),
+                "norm_kv": nn.LayerNorm(d_model),
+                "cross_attn": nn.MultiheadAttention(
+                    embed_dim=d_model, num_heads=n_heads,
+                    dropout=dropout, batch_first=True,
+                ),
+                "norm_ff": nn.LayerNorm(d_model),
+                "ffn": nn.Sequential(
+                    nn.Linear(d_model, d_model * 2),
+                    nn.GELU(),
+                    nn.Dropout(dropout),
+                    nn.Linear(d_model * 2, d_model),
+                    nn.Dropout(dropout),
+                ),
+            }))
 
-        # Fusion MLP: d_model -> e_dim
+        # Final projection: d_model -> e_dim
+        self.out_norm = nn.LayerNorm(d_model)
         self.fusion_mlp = nn.Sequential(
             nn.Linear(d_model, d_model // 2),
             nn.GELU(),
@@ -289,28 +312,40 @@ class COMETFusion(nn.Module):
         Returns:
             z: [B, e_dim]
         """
+        B = text_emb.shape[0]
+
         # Fill missing images with learnable padding
         if image_mask is not None and image_mask.any():
             image_emb = image_emb.clone()
             image_emb[image_mask] = self.image_padding.expand(image_mask.sum(), -1)
 
-        # Project to d_model
-        text_kv = self.text_proj(text_emb).unsqueeze(1)     # [B, 1, d_model]
-        image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
-        cf_q = self.cf_proj(cf_emb).unsqueeze(1)             # [B, 1, d_model]
+        # Text -> split into chunks -> multi-token KV
+        # [B, text_dim] -> [B, text_n_tokens, chunk_dim] -> [B, text_n_tokens, d_model]
+        text_chunks = text_emb.view(B, self.text_n_tokens, self.text_chunk_dim)
+        text_kv = self.text_proj(text_chunks)               # [B, text_n_tokens, d_model]
 
-        # KV: concat text + image -> [B, 2, d_model]
+        image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
+
+        # KV: concat text tokens + image token -> [B, text_n_tokens+1, d_model]
         kv = torch.cat([text_kv, image_kv], dim=1)
 
-        # Cross-attention: query=CF, key/value=text+image
-        attn_out, _ = self.cross_attn(cf_q, kv, kv)  # [B, 1, d_model]
-        attn_out = attn_out.squeeze(1)                # [B, d_model]
+        # Query: CF embedding
+        q = self.cf_proj(cf_emb).unsqueeze(1)                # [B, 1, d_model]
 
-        # Residual + text skip-connection + LayerNorm
-        fused = self.layer_norm(attn_out + cf_q.squeeze(1) + text_kv.squeeze(1))
+        # Stacked cross-attention with residual connections
+        for layer in self.layers:
+            # Pre-LN cross-attention
+            q_norm = layer["norm_q"](q)
+            kv_norm = layer["norm_kv"](kv)
+            attn_out, _ = layer["cross_attn"](q_norm, kv_norm, kv_norm)
+            q = q + attn_out                                 # [B, 1, d_model]
 
-        # MLP to codebook dimension
-        z = self.fusion_mlp(fused)  # [B, e_dim]
+            # Pre-LN feed-forward
+            q = q + layer["ffn"](layer["norm_ff"](q))        # [B, 1, d_model]
+
+        # Final output
+        fused = self.out_norm(q).squeeze(1)                  # [B, d_model]
+        z = self.fusion_mlp(fused)                           # [B, e_dim]
         return z
 
 
@@ -321,7 +356,8 @@ class COMETFusion(nn.Module):
 class RQVAE(nn.Module):
 
     def __init__(self, text_dim=4096, image_dim=768, cf_dim=128,
-                 d_model=256, n_heads=4, e_dim=32, fusion_dropout=0.1,
+                 d_model=256, n_heads=4, e_dim=64, fusion_dropout=0.1,
+                 n_attn_layers=2, text_n_tokens=4,
                  decoder_dims=None, n_e_list=None,
                  commitment_weight=0.25, ema_decay=0.99, dead_threshold=2.0,
                  diversity_weight=0.01,
@@ -332,7 +368,7 @@ class RQVAE(nn.Module):
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
         if decoder_dims is None:
-            decoder_dims = [128, 256, 512, 1024]
+            decoder_dims = [256, 512, 1024, 2048]
 
         self.quant_loss_weight = quant_loss_weight
         self.w_text = w_text
@@ -344,6 +380,7 @@ class RQVAE(nn.Module):
             text_dim=text_dim, image_dim=image_dim, cf_dim=cf_dim,
             d_model=d_model, n_heads=n_heads, e_dim=e_dim,
             dropout=fusion_dropout,
+            n_attn_layers=n_attn_layers, text_n_tokens=text_n_tokens,
         )
 
         # Text decoder (primary): e_dim -> text_dim
