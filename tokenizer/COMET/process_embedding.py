@@ -189,6 +189,9 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
     n_items = len(text_emb)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=args.epochs, eta_min=args.lr * 0.01,
+    )
 
     # KMeans init
     print("Running KMeans init ...")
@@ -207,7 +210,7 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
     image_tensor = torch.from_numpy(image_emb).to(device)
     mask_tensor = torch.from_numpy(image_mask).to(device)
 
-    best_loss = float("inf")
+    best_recon = float("inf")
     for epoch in range(1, args.epochs + 1):
         model.train()
 
@@ -260,14 +263,17 @@ def train(model, text_emb, image_emb, cf_emb, image_mask, args, device):
             usage_parts.append(f"L{layer}:{used}/{args.n_e_list[layer]}(ppl={ppl:.0f})")
 
         epoch_loss = total_loss / n
-        print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={total_recon/n:.6f} "
+        epoch_recon = total_recon / n
+        print(f"[Epoch {epoch}] loss={epoch_loss:.6f} recon={epoch_recon:.6f} "
               f"(text={total_text_recon/n:.6f} image={total_image_recon/n:.6f} cf={total_cf_recon/n:.6f}) "
-              f"vq={total_vq/n:.6f} | {' '.join(usage_parts)}")
+              f"vq={total_vq/n:.6f} lr={scheduler.get_last_lr()[0]:.2e} | {' '.join(usage_parts)}")
 
-        if epoch_loss < best_loss:
-            best_loss = epoch_loss
+        scheduler.step()
+
+        if epoch_recon < best_recon:
+            best_recon = epoch_recon
             save_checkpoint(model, args.model_path, args)
-            print(f"  -> saved (loss={epoch_loss:.6f})")
+            print(f"  -> saved (recon={epoch_recon:.6f})")
 
     # Reload best
     load_checkpoint(model, args.model_path, device)

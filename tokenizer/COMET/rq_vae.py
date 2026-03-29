@@ -261,11 +261,13 @@ class COMETFusion(nn.Module):
         self.d_model = d_model
         self.text_n_tokens = text_n_tokens
 
-        # Text: split into chunks then project each chunk
+        # Text: split into chunks, each chunk has its own projection
         assert text_dim % text_n_tokens == 0, \
             f"text_dim ({text_dim}) must be divisible by text_n_tokens ({text_n_tokens})"
         self.text_chunk_dim = text_dim // text_n_tokens
-        self.text_proj = nn.Linear(self.text_chunk_dim, d_model)
+        self.text_projs = nn.ModuleList([
+            nn.Linear(self.text_chunk_dim, d_model) for _ in range(text_n_tokens)
+        ])
 
         # Image & CF projection (single token each)
         self.image_proj = nn.Linear(image_dim, d_model)
@@ -319,10 +321,13 @@ class COMETFusion(nn.Module):
             image_emb = image_emb.clone()
             image_emb[image_mask] = self.image_padding.expand(image_mask.sum(), -1)
 
-        # Text -> split into chunks -> multi-token KV
-        # [B, text_dim] -> [B, text_n_tokens, chunk_dim] -> [B, text_n_tokens, d_model]
+        # Text -> split into chunks -> per-chunk projection -> multi-token KV
+        # [B, text_dim] -> [B, text_n_tokens, chunk_dim]
         text_chunks = text_emb.view(B, self.text_n_tokens, self.text_chunk_dim)
-        text_kv = self.text_proj(text_chunks)               # [B, text_n_tokens, d_model]
+        text_kv = torch.stack(
+            [proj(text_chunks[:, i]) for i, proj in enumerate(self.text_projs)],
+            dim=1,
+        )  # [B, text_n_tokens, d_model]
 
         image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
 
