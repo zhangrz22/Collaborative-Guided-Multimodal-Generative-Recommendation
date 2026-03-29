@@ -392,19 +392,6 @@ def main():
     image_emb, image_mask = load_image_parquet(args.image_file, item_ids)
     cf_emb = load_cf_embeddings(args.cf_ckpt, item_ids)
 
-    # L2 normalize all embeddings so MSE losses are on the same scale
-    def l2_normalize(emb, mask=None):
-        norms = np.linalg.norm(emb, axis=1, keepdims=True).clip(min=1e-8)
-        out = emb / norms
-        if mask is not None:
-            out[mask] = 0.0  # keep missing entries as zero
-        return out
-
-    text_emb = l2_normalize(text_emb)
-    image_emb = l2_normalize(image_emb, mask=image_mask)
-    cf_emb = l2_normalize(cf_emb)
-    print("All embeddings L2-normalized.")
-
     text_dim = text_emb.shape[1]
     image_dim = image_emb.shape[1]
     cf_dim = cf_emb.shape[1]
