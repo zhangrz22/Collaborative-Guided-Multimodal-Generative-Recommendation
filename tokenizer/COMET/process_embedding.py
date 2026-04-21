@@ -379,6 +379,12 @@ def parse_args():
     # Refine
     p.add_argument("--max_refine_rounds", type=int, default=5)
     p.add_argument("--target_collision_rate", type=float, default=0.05)
+
+    # Ablation
+    p.add_argument("--ablate_image", action="store_true",
+                   help="Ablation: remove image modality from fusion and reconstruction")
+    p.add_argument("--ablate_cf", action="store_true",
+                   help="Ablation: remove CF query, use learnable query instead")
     return p.parse_args()
 
 
@@ -400,6 +406,10 @@ def main():
 
     device = torch.device(args.device)
     print(f"Using device: {device}")
+    if args.ablate_image:
+        print("** ABLATION: image modality removed **")
+    if args.ablate_cf:
+        print("** ABLATION: CF query replaced with learnable query **")
 
     model = RQVAE(
         text_dim=text_dim,
@@ -423,6 +433,8 @@ def main():
         w_text=args.w_text,
         w_image=args.w_image,
         w_cf=args.w_cf,
+        ablate_image=args.ablate_image,
+        ablate_cf=args.ablate_cf,
     ).to(device)
 
     if args.load_model and os.path.exists(args.model_path):

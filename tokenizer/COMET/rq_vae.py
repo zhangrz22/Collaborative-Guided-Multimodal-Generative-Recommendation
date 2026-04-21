@@ -256,10 +256,13 @@ class COMETFusion(nn.Module):
 
     def __init__(self, text_dim=4096, image_dim=768, cf_dim=128,
                  d_model=256, n_heads=4, e_dim=64, dropout=0.1,
-                 n_attn_layers=2, text_n_tokens=4):
+                 n_attn_layers=2, text_n_tokens=4,
+                 ablate_image=False, ablate_cf=False):
         super().__init__()
         self.d_model = d_model
         self.text_n_tokens = text_n_tokens
+        self.ablate_image = ablate_image
+        self.ablate_cf = ablate_cf
 
         # Text: split into chunks, each chunk has its own projection
         assert text_dim % text_n_tokens == 0, \
@@ -275,6 +278,10 @@ class COMETFusion(nn.Module):
 
         # Learnable padding for missing image embeddings
         self.image_padding = nn.Parameter(torch.zeros(1, image_dim))
+
+        # Learnable query for ablation: replaces CF query when ablate_cf=True
+        if self.ablate_cf:
+            self.learned_query = nn.Parameter(torch.randn(1, 1, d_model) * 0.02)
 
         # Stacked cross-attention layers (Pre-LN style)
         self.layers = nn.ModuleList()
@@ -329,13 +336,18 @@ class COMETFusion(nn.Module):
             dim=1,
         )  # [B, text_n_tokens, d_model]
 
-        image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
+        # KV: text tokens (+ image token if not ablated)
+        if self.ablate_image:
+            kv = text_kv                                         # [B, text_n_tokens, d_model]
+        else:
+            image_kv = self.image_proj(image_emb).unsqueeze(1)   # [B, 1, d_model]
+            kv = torch.cat([text_kv, image_kv], dim=1)           # [B, text_n_tokens+1, d_model]
 
-        # KV: concat text tokens + image token -> [B, text_n_tokens+1, d_model]
-        kv = torch.cat([text_kv, image_kv], dim=1)
-
-        # Query: CF embedding
-        q = self.cf_proj(cf_emb).unsqueeze(1)                # [B, 1, d_model]
+        # Query: learnable query (ablation) or CF embedding
+        if self.ablate_cf:
+            q = self.learned_query.expand(B, -1, -1)             # [B, 1, d_model]
+        else:
+            q = self.cf_proj(cf_emb).unsqueeze(1)                # [B, 1, d_model]
 
         # Stacked cross-attention with residual connections
         for layer in self.layers:
@@ -368,7 +380,8 @@ class RQVAE(nn.Module):
                  diversity_weight=0.01,
                  sk_epsilons=None, sk_iters=50,
                  quant_loss_weight=1.0,
-                 w_text=1.0, w_image=0.1, w_cf=0.1):
+                 w_text=1.0, w_image=0.1, w_cf=0.1,
+                 ablate_image=False, ablate_cf=False):
         super().__init__()
         if n_e_list is None:
             n_e_list = [256, 256, 256, 256]
@@ -377,8 +390,10 @@ class RQVAE(nn.Module):
 
         self.quant_loss_weight = quant_loss_weight
         self.w_text = w_text
-        self.w_image = w_image
-        self.w_cf = w_cf
+        self.w_image = 0.0 if ablate_image else w_image
+        self.w_cf = 0.0 if ablate_cf else w_cf
+        self.ablate_image = ablate_image
+        self.ablate_cf = ablate_cf
 
         # Encoder: COMET cross-attention fusion
         self.encoder = COMETFusion(
@@ -386,6 +401,7 @@ class RQVAE(nn.Module):
             d_model=d_model, n_heads=n_heads, e_dim=e_dim,
             dropout=fusion_dropout,
             n_attn_layers=n_attn_layers, text_n_tokens=text_n_tokens,
+            ablate_image=ablate_image, ablate_cf=ablate_cf,
         )
 
         # Text decoder (primary): e_dim -> text_dim
@@ -443,8 +459,10 @@ class RQVAE(nn.Module):
         # Text recon loss (all items)
         text_recon_loss = F.mse_loss(text_rec, text_emb)
 
-        # Image recon loss (only for items with valid images)
-        if image_mask is not None and image_mask.any():
+        # Image recon loss (skip if ablated)
+        if self.ablate_image:
+            image_recon_loss = torch.zeros((), device=text_emb.device)
+        elif image_mask is not None and image_mask.any():
             valid_image = ~image_mask
             if valid_image.any():
                 image_recon_loss = F.mse_loss(image_rec[valid_image],
@@ -454,8 +472,11 @@ class RQVAE(nn.Module):
         else:
             image_recon_loss = F.mse_loss(image_rec, image_emb)
 
-        # CF recon loss (all items)
-        cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
+        # CF recon loss (skip if ablated)
+        if self.ablate_cf:
+            cf_recon_loss = torch.zeros((), device=text_emb.device)
+        else:
+            cf_recon_loss = F.mse_loss(cf_rec, cf_emb)
 
         recon_loss = (self.w_text * text_recon_loss
                       + self.w_image * image_recon_loss
