@@ -1,0 +1,241 @@
+% !TeX root = ../thuthesis-example.tex
+
+\chapter{基于协同引导的多模态语义ID构建方法}
+
+本章详细介绍本文提出的COMET（Collaborative-guided Multimodal Encoding Tokenizer）方法。首先给出问题定义，然后描述整体框架，接着分别介绍多模态嵌入提取、COMET融合模块、残差向量量化以及训练与碰撞优化策略。
+
+\section{问题定义}
+
+\subsection{序列推荐}
+
+设物品集合为$\mathcal{I} = \{i_1, i_2, \ldots, i_N\}$，用户集合为$\mathcal{U} = \{u_1, u_2, \ldots, u_M\}$。每个用户$u$有一个按时间排序的交互序列$\mathcal{S}_u = [s_1, s_2, \ldots, s_T]$，其中$s_t \in \mathcal{I}$。序列推荐的目标是根据$\mathcal{S}_u$预测用户下一个将要交互的物品$s_{T+1}$。
+
+\subsection{语义ID}
+
+语义ID是将每个物品映射为一个$L$层离散编码的表示：
+\begin{equation}
+  \text{SID}(i) = (c_1, c_2, \ldots, c_L), \quad c_l \in \{0, 1, \ldots, K-1\},
+\end{equation}
+其中$L$为编码层数，$K$为每层的码本大小。在本文的实验设置中，$L=4$，$K=256$。语义ID的构建应满足以下性质：（1）语义相似的物品具有相近的编码，（2）不同物品尽量具有不同的编码（低碰撞率），（3）编码层级从粗到细，第一层捕捉物品的大类别，后续层逐步细化。
+
+\subsection{生成式推荐}
+
+生成式推荐将序列推荐重新表述为序列到序列的生成任务。给定用户交互历史$\mathcal{S}_u = [s_1, \ldots, s_T]$，将每个物品替换为其语义ID，得到输入序列：
+\begin{equation}
+  \mathbf{X} = [\text{SID}(s_1); \text{SID}(s_2); \ldots; \text{SID}(s_T)].
+\end{equation}
+生成模型的目标是自回归地生成目标物品的语义ID：
+\begin{equation}
+  P(s_{T+1} | \mathcal{S}_u) = \prod_{l=1}^{L} P(c_l | \mathbf{X}, c_1, \ldots, c_{l-1}).
+\end{equation}
+
+\section{整体框架}
+
+COMET的整体框架如图~\ref{fig:framework}所示。整个流水线包括以下阶段：
+
+\begin{enumerate}
+  \item \textbf{多模态嵌入提取}：分别使用Qwen3-Embedding-8B、CLIP ViT-L/14和SASRec提取物品的文本嵌入（4096维）、图像嵌入（768维）和协同过滤嵌入（128维）。
+  \item \textbf{COMET融合编码}：通过CF-as-Query跨注意力机制将三种模态嵌入融合为64维隐向量。
+  \item \textbf{残差向量量化}：将隐向量通过4层残差量化生成离散的4层语义ID。
+  \item \textbf{训练优化}：通过多目标重建损失和量化损失联合训练，使用余弦退火学习率调度，并在训练后期启用Sinkhorn均匀化约束，训练后进行Sinkhorn碰撞优化。
+  \item \textbf{下游生成推荐}：将构建的语义ID输入TIGER或OneRec进行生成式推荐。
+\end{enumerate}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{framework-comet.png}
+  \caption{COMET整体框架}
+  \label{fig:framework}
+\end{figure}
+
+\section{多模态嵌入提取}
+
+COMET的输入由三种模态的物品嵌入组成，分别编码了物品的文本语义、视觉外观和协同过滤信号。
+
+\subsection{文本嵌入}
+
+文本嵌入是语义ID的核心信息来源。本文为每个物品构建结构化的文本描述，包含标题、品牌、价格、商品描述和类别信息，格式如下：
+\begin{verbatim}
+Title: <标题>
+Brand: <品牌>
+Price: $<价格>
+Description: <商品描述>
+Categories: <类别1> > <类别2> > <类别3>
+\end{verbatim}
+
+使用Qwen3-Embedding-8B\cite{qwen3embedding}作为文本编码器。该模型是一个80亿参数的文本嵌入模型，通过last-token池化提取4096维的密集表示。在推理时，为输入文本添加指令前缀``Represent the item description for recommendation:''以引导模型关注推荐相关的语义信息。
+
+\subsection{图像嵌入}
+
+图像嵌入补充了物品的视觉外观信息。在电商场景中，商品图片直观展示了颜色、形状、材质等文本难以精确描述的属性，对用户的购买决策具有重要影响。
+
+本文使用CLIP ViT-L/14\cite{radford2021learning}作为图像编码器。CLIP通过在4亿图文对上进行对比学习，其视觉编码器能够提取具有语义理解能力的768维图像表示。对于少量缺失图像的物品（Amazon Beauty数据集中约8个物品），使用零向量作为占位，并在COMET融合模块中通过可学习填充向量处理。
+
+\subsection{协同过滤嵌入}
+
+协同过滤嵌入编码了物品在用户行为空间中的表示，反映了"购买了A的用户也倾向于购买B"这类协同信号。
+
+本文使用预训练的SASRec\cite{kang2018self}模型提取协同过滤嵌入。SASRec在用户交互序列上通过交叉熵损失训练，其物品嵌入表$\mathbf{E} \in \mathbb{R}^{N \times d_{\text{cf}}}$中的每一行编码了对应物品的协同过滤信息。本文使用的SASRec模型的隐藏维度$d_{\text{cf}}=128$。
+
+\section{COMET融合模块}
+
+COMET的核心创新是CF-as-Query跨注意力融合模块（COMETFusion），用于将三种模态的嵌入融合为统一的低维表示。
+
+\subsection{模态投影}
+
+首先，将三种不同维度的模态嵌入投影到统一的注意力操作维度$d_{\text{model}}$（本文设为256）。
+
+\textbf{文本多token投影}。原始文本嵌入$\mathbf{e}_{\text{text}} \in \mathbb{R}^{4096}$维度远高于其他模态，单一线性投影会导致严重的信息压缩损失。为此，COMET将4096维文本嵌入均匀分割为4个1024维的片段，每个片段使用独立的线性投影映射到$d_{\text{model}}$维：
+\begin{equation}
+  \mathbf{e}_{\text{text}} = [\mathbf{e}_{\text{text}}^{(1)}; \mathbf{e}_{\text{text}}^{(2)}; \mathbf{e}_{\text{text}}^{(3)}; \mathbf{e}_{\text{text}}^{(4)}], \quad \mathbf{e}_{\text{text}}^{(j)} \in \mathbb{R}^{1024},
+\end{equation}
+\begin{equation}
+  \mathbf{h}_{\text{text}}^{(j)} = \mathbf{W}_{\text{text}}^{(j)} \mathbf{e}_{\text{text}}^{(j)} + \mathbf{b}_{\text{text}}^{(j)}, \quad \mathbf{W}_{\text{text}}^{(j)} \in \mathbb{R}^{d_{\text{model}} \times 1024}, \quad j = 1, 2, 3, 4.
+\end{equation}
+这一设计将原始的1个文本KV token扩展为4个token，每个token聚焦于文本嵌入的不同语义子空间，使跨注意力能够更细粒度地选择文本信息。
+
+图像嵌入和协同过滤嵌入的投影方式不变：
+\begin{align}
+  \mathbf{h}_{\text{image}} &= \mathbf{W}_{\text{image}} \mathbf{e}_{\text{image}} + \mathbf{b}_{\text{image}}, \quad \mathbf{W}_{\text{image}} \in \mathbb{R}^{d_{\text{model}} \times 768}, \\
+  \mathbf{h}_{\text{cf}} &= \mathbf{W}_{\text{cf}} \mathbf{e}_{\text{cf}} + \mathbf{b}_{\text{cf}}, \quad \mathbf{W}_{\text{cf}} \in \mathbb{R}^{d_{\text{model}} \times 128}.
+\end{align}
+
+对于缺失图像的物品，使用可学习的填充向量$\mathbf{p} \in \mathbb{R}^{768}$替代零向量：
+\begin{equation}
+  \mathbf{e}_{\text{image}}' = \begin{cases} \mathbf{e}_{\text{image}}, & \text{if image exists,} \\ \mathbf{p}, & \text{otherwise.} \end{cases}
+\end{equation}
+
+\subsection{CF-as-Query跨注意力}
+
+COMET融合的关键设计是将协同过滤嵌入作为注意力查询，文本和图像嵌入作为键值对，通过多层Transformer解码器块实现深度融合。
+
+\textbf{查询（Query）}：投影后的CF嵌入$\mathbf{Q} = \mathbf{h}_{\text{cf}} \in \mathbb{R}^{1 \times d_{\text{model}}}$。
+
+\textbf{键值对（Key-Value）}：4个文本token和1个图像token拼接构成5个token的序列：
+\begin{equation}
+  \mathbf{K} = \mathbf{V} = [\mathbf{h}_{\text{text}}^{(1)}; \mathbf{h}_{\text{text}}^{(2)}; \mathbf{h}_{\text{text}}^{(3)}; \mathbf{h}_{\text{text}}^{(4)}; \mathbf{h}_{\text{image}}] \in \mathbb{R}^{5 \times d_{\text{model}}}.
+\end{equation}
+
+\textbf{多层跨注意力}。COMET使用2层堆叠的Transformer解码器块，每层包含跨注意力和前馈网络（FFN）。设第$i$层输入为$\mathbf{q}^{(i)}$（$\mathbf{q}^{(0)} = \mathbf{Q}$），每层的计算如下：
+\begin{align}
+  \mathbf{q}'^{(i)} &= \mathbf{q}^{(i)} + \text{CrossAttn}^{(i)}\bigl(\text{LN}_1^{(i)}(\mathbf{q}^{(i)}),\; \text{LN}_2^{(i)}(\mathbf{KV})\bigr), \label{eq:preln-attn} \\
+  \mathbf{q}^{(i+1)} &= \mathbf{q}'^{(i)} + \text{FFN}^{(i)}\bigl(\text{LN}_3^{(i)}(\mathbf{q}'^{(i)})\bigr), \label{eq:preln-ffn}
+\end{align}
+其中$\text{LN}$为层归一化，$\text{FFN}$为两层线性变换（维度$d_{\text{model}} \to 4 d_{\text{model}} \to d_{\text{model}}$）加GELU激活。跨注意力使用$n_{\text{heads}}=4$个头，$d_{\text{head}}=64$。
+
+与单层注意力相比，2层堆叠结构使模型具有更强的模态交互建模能力。第一层可以学习初步的模态选择和信息提取，第二层在此基础上进一步精细融合。每层的残差连接保证了CF信号的直接传递。
+
+最终融合输出$\mathbf{f} = \mathbf{q}^{(2)}$经过最终的层归一化后输入融合MLP。
+
+\subsection{融合MLP}
+
+归一化后的特征通过两层感知机映射到码本维度$d_e$：
+\begin{equation}
+  \mathbf{z} = \mathbf{W}_2 \cdot \text{GELU}(\mathbf{W}_1 \mathbf{f} + \mathbf{b}_1) + \mathbf{b}_2,
+\end{equation}
+其中$\mathbf{W}_1 \in \mathbb{R}^{128 \times 256}$，$\mathbf{W}_2 \in \mathbb{R}^{64 \times 128}$，最终输出$\mathbf{z} \in \mathbb{R}^{64}$。
+
+\section{残差向量量化}
+
+隐向量$\mathbf{z}$通过4层残差向量量化生成离散的语义ID。量化过程与RQ-VAE相同（见第二章），本节重点介绍COMET保留的辅助技术。
+
+\subsection{指数移动平均码本更新}
+
+码本不通过梯度更新，而是使用指数移动平均（EMA）跟踪被分配到各码向量的输入分布：
+\begin{align}
+  \mathbf{n}^{(t)} &= \gamma \mathbf{n}^{(t-1)} + (1-\gamma) \sum_j \mathbf{1}[k_j = k], \\
+  \mathbf{m}^{(t)} &= \gamma \mathbf{m}^{(t-1)} + (1-\gamma) \sum_j \mathbf{1}[k_j = k] \cdot \mathbf{r}_j,
+\end{align}
+其中$\gamma = 0.99$为衰减因子。码向量更新为$\mathbf{c}_k = \mathbf{m}_k / \tilde{n}_k$，$\tilde{n}_k$经Laplace平滑处理。
+
+\subsection{死码重启}
+
+当某个码向量的EMA计数低于阈值（$\delta=2.0$）时，将其替换为当前批次中的一个随机输入向量，并重置计数。这一机制有效防止了码本中出现长期不被使用的"死码"，维持码本的有效利用率。
+
+\subsection{码本多样性损失}
+
+COMET保留了LETTER提出的码本多样性损失。每个训练周期对各层码本进行KMeans聚类（10个聚类），然后在聚类内部施加对比损失：
+\begin{equation}
+  \mathcal{L}_{\text{div}} = -\frac{1}{|\mathcal{V}|}\sum_{i \in \mathcal{V}} \log \frac{\exp(\text{sim}(\mathbf{x}_{q,i}, \mathbf{c}_{p_i}) / \tau_d)}{\sum_{j \neq k_i} \exp(\text{sim}(\mathbf{x}_{q,i}, \mathbf{c}_j) / \tau_d)},
+\end{equation}
+其中$p_i$为与$k_i$同聚类的随机正样本码向量索引，$\tau_d = 0.1$为温度参数，$\mathcal{V}$为有效样本集合。
+
+\subsection{KMeans码本初始化}
+
+训练开始前，先将所有物品通过COMET融合模块得到隐向量$\mathbf{z}$，然后对第一层码本进行KMeans初始化，再在残差上依次初始化后续层的码本。KMeans迭代100次以确保收敛。
+
+\section{训练策略}
+
+\subsection{损失函数}
+
+COMET的训练损失由重建损失和量化损失组成：
+\begin{equation}
+  \mathcal{L} = \mathcal{L}_{\text{rec}} + \lambda \mathcal{L}_{\text{vq}},
+  \label{eq:loss}
+\end{equation}
+其中$\lambda = 1.0$为量化损失权重。
+
+重建损失采用多目标重建策略，同时重建文本、图像和协同过滤三种模态的嵌入。COMET使用三个独立的解码器分支：
+
+\begin{itemize}
+  \item \textbf{文本解码器}：5层MLP（$64 \to 256 \to 512 \to 1024 \to 2048 \to 4096$），重建原始文本嵌入；
+  \item \textbf{图像解码器}：2层MLP（$64 \to 256 \to 768$），重建原始图像嵌入；
+  \item \textbf{CF解码器}：2层MLP（$64 \to 128 \to 128$），重建原始协同过滤嵌入。
+\end{itemize}
+中间层使用ReLU激活。
+
+重建损失为三个分支的加权均方误差之和：
+\begin{equation}
+  \mathcal{L}_{\text{rec}} = w_{\text{text}} \|\text{Dec}_{\text{text}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{text}}\|^2 + w_{\text{image}} \|\text{Dec}_{\text{image}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{image}}\|^2 + w_{\text{cf}} \|\text{Dec}_{\text{cf}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{cf}}\|^2,
+\end{equation}
+其中$\hat{\mathbf{z}}$为经直通估计器（straight-through estimator）处理后的量化表示，$w_{\text{text}} = 1.0$，$w_{\text{image}} = 0.1$，$w_{\text{cf}} = 0.1$。对于缺失图像的物品，图像重建损失项被掩码（mask）为零，不参与梯度计算。
+
+多目标重建的设计动机如下：文本嵌入作为维度最高、信息量最丰富的模态，赋予最大的重建权重（1.0），确保隐空间以文本语义为主干。图像和CF的重建权重较低（0.1），起到正则化作用——迫使隐向量$\mathbf{z}$不仅编码文本信息，还需保留一定的视觉和协同过滤信号，从而实现更均衡的多模态融合。相比仅重建文本嵌入，多目标重建在64维隐空间中能更有效地组织多模态信息。
+
+量化损失为4层承诺损失和多样性损失的平均值：
+\begin{equation}
+  \mathcal{L}_{\text{vq}} = \frac{1}{L} \sum_{l=1}^{L} \left[\beta \|\mathbf{r}^{(l-1)} - \text{sg}[\mathbf{c}_{k^{(l)}}^{(l)}]\|^2 + \gamma \mathcal{L}_{\text{div}}^{(l)}\right],
+\end{equation}
+其中$\beta = 0.25$，$\gamma = 0.0001$。
+
+\subsection{优化器与训练细节}
+
+使用AdamW优化器，学习率$1 \times 10^{-3}$，权重衰减$1 \times 10^{-4}$。梯度裁剪阈值为1.0。批大小为1024，训练300个周期。
+
+\textbf{学习率调度}。使用余弦退火调度器（CosineAnnealingLR），学习率从初始值$1 \times 10^{-3}$按余弦函数逐渐衰减至$\eta_{\min} = 1 \times 10^{-5}$（即初始学习率的1\%）。相比固定学习率，余弦调度在训练后期提供更精细的参数更新，有助于模型收敛到更优解。
+
+\textbf{训练时Sinkhorn均匀化}。在训练的最后20\%周期（即第241--300周期），对残差向量量化的码分配启用Sinkhorn均匀化约束，促进码本的均匀利用。这一策略在训练阶段就开始减少碰撞，为训练后的Sinkhorn碰撞优化提供更好的起点。
+
+\textbf{模型选择}。在训练过程中保存加权重建损失$\mathcal{L}_{\text{rec}}$最低的模型检查点，而非使用总训练损失进行模型选择。这是因为量化损失和多样性损失的波动较大，直接使用总损失可能导致选择到重建质量次优的模型。
+
+\textbf{与LETTER的训练对比}。值得注意的是，COMET\textbf{不使用CF对比损失}（InfoNCE）。CF信号在COMET中完全通过跨注意力机制的架构设计融入，不需要额外的对比损失函数及其权重调节。
+
+\section{Sinkhorn碰撞优化}
+
+训练完成后，对所有物品进行编码，统计语义ID的碰撞情况（多个物品共享相同的语义ID）。对碰撞组进行迭代优化：
+
+在最后两层量化器上启用Sinkhorn-Knopp算法\cite{cuturi2013sinkhorn}，将码分配问题转化为最优传输问题。对归一化的距离矩阵$\mathbf{D}$进行迭代行列归一化：
+\begin{equation}
+  \mathbf{Q}^{(0)} = \exp(-\mathbf{D} / \epsilon), \quad \mathbf{Q}^{(t)} = \text{RowNorm}(\text{ColNorm}(\mathbf{Q}^{(t-1)})),
+\end{equation}
+迭代50次后，$\mathbf{Q}$趋近于均匀分配矩阵，碰撞组中的物品被分配到不同的码上。
+
+与之前仅在最后一层使用统一温度参数的方案不同，COMET采用\textbf{渐进式温度策略}：第3层$\epsilon_3 = 0.005$，第4层$\epsilon_4 = 0.01$。较浅层使用较小的$\epsilon$以保持编码的精确性，较深层使用较大的$\epsilon$以允许更灵活的码分配。在最后两层而非仅最后一层启用Sinkhorn优化，能够在更大的编码空间中进行碰撞消解，显著提高碰撞消除的有效性。
+
+配合训练时Sinkhorn均匀化（见§3.6.2），训练后的碰撞优化需要调整的码分配数量更少，最多进行5轮碰撞优化，目标碰撞率为5\%以下。
+
+\section{下游生成式推荐模型}
+
+COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐模型。本文使用两种代表性模型进行评估。
+
+\subsection{TIGER}
+
+TIGER\cite{rajput2023recommender}基于T5\cite{raffel2020exploring}编码器-解码器架构。用户历史中每个物品的4层语义ID被转化为特殊token（如$\langle s\_a\_3 \rangle$），拼接后作为编码器输入。解码器自回归生成目标物品的4个语义ID token，并使用基于前缀树的约束束搜索确保输出的合法性。本文使用的TIGER配置为：4层编码器、4层解码器、模型维度128、前馈维度1024、6个注意力头、束宽20。
+
+\subsection{OneRec}
+
+OneRec\cite{onerec}采用自定义Transformer架构，使用跨注意力机制将用户历史编码为KV缓存供解码器查询。其架构借鉴大语言模型设计，使用RMSNorm、SiLU门控FFN和更大的模型容量（1024维、12层、16头）。OneRec使用3个独立词汇表（第3和第4位置共享一个词汇表），词汇表大小为8192，配合预裁剪策略（top-1024）加速束搜索。
+
+\section{本章小结}
+
+本章详细介绍了COMET方法的设计细节。COMET的核心创新在于CF-as-Query跨注意力融合机制，将协同过滤信号从辅助损失的间接引导提升为架构级别的直接融合，同时引入文本多token投影和图像模态信息，构建了5个KV token的丰富键值序列。在训练策略上，COMET采用多目标重建损失（文本+图像+CF）促进多模态信息在隐空间中的均衡编码，使用余弦退火学习率调度和训练时Sinkhorn均匀化进一步提升码本质量。与LETTER相比，COMET通过架构设计实现CF信号的融合，不依赖额外的对比损失函数。

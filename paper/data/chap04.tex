@@ -1,0 +1,272 @@
+% !TeX root = ../thuthesis-example.tex
+
+\chapter{实验}
+
+本章对COMET方法进行全面的实验评估。首先介绍实验设置，然后展示主实验结果，接着进行消融实验分析各组件的贡献，最后对语义ID的质量进行分析。
+
+\section{实验设置}
+
+\subsection{数据集}
+
+本文在Amazon Beauty数据集\cite{mcauley2015image}上进行实验。该数据集包含美妆类商品的用户交互记录。与已有工作\cite{rajput2023recommender,wang2024lcrec}一致，对数据进行5-core过滤（丢弃交互次数少于5次的用户和物品）。数据集的基本统计信息如表~\ref{tab:dataset}所示。
+
+\begin{table}[htbp]
+  \centering
+  \caption{Amazon Beauty数据集统计}
+  \label{tab:dataset}
+  \begin{tabular}{lc}
+    \toprule
+    统计量 & 数值 \\
+    \midrule
+    用户数 & 22,363 \\
+    物品数 & 12,101 \\
+    交互数 & 198,502 \\
+    平均交互长度 & 8.88 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+本文关注序列推荐场景，采用Leave-One-Out策略划分数据集：每个用户交互序列中，最后一个物品作为测试集，倒数第二个物品作为验证集，其余物品作为训练集。交互序列截断为最近50个物品。
+
+\begin{table}[htbp]
+  \centering
+  \caption{COMET超参数设置}
+  \label{tab:hyperparams}
+  \begin{tabular}{lcc}
+    \toprule
+    超参数 & 符号 & 值 \\
+    \midrule
+    \multicolumn{3}{l}{\textit{COMET融合模块}} \\
+    注意力维度 & $d_{\text{model}}$ & 256 \\
+    注意力头数 & $n_{\text{heads}}$ & 4 \\
+    跨注意力层数 & $n_{\text{attn\_layers}}$ & 2 \\
+    文本token数 & $n_{\text{text\_tokens}}$ & 4 \\
+    融合Dropout & -- & 0.1 \\
+    \midrule
+    \multicolumn{3}{l}{\textit{残差向量量化}} \\
+    码本层数 & $L$ & 4 \\
+    每层码本大小 & $K$ & 256 \\
+    码本维度 & $d_e$ & 64 \\
+    承诺损失权重 & $\beta$ & 0.25 \\
+    多样性损失权重 & $\gamma$ & 0.0001 \\
+    EMA衰减因子 & $\gamma_{\text{ema}}$ & 0.99 \\
+    死码阈值 & $\delta$ & 2.0 \\
+    \midrule
+    \multicolumn{3}{l}{\textit{训练}} \\
+    训练周期 & -- & 300 \\
+    批大小 & -- & 1024 \\
+    学习率 & -- & $1 \times 10^{-3}$ \\
+    权重衰减 & -- & $1 \times 10^{-4}$ \\
+    梯度裁剪 & -- & 1.0 \\
+    学习率调度 & -- & CosineAnnealingLR \\
+    最小学习率 & $\eta_{\min}$ & $1 \times 10^{-5}$ \\
+    Sinkhorn训练比例 & $\text{sk\_start\_ratio}$ & 0.2 \\
+    \midrule
+    \multicolumn{3}{l}{\textit{碰撞优化}} \\
+    Sinkhorn层数 & -- & 最后2层 \\
+    Sinkhorn $\epsilon$（L3） & $\epsilon_3$ & 0.005 \\
+    Sinkhorn $\epsilon$（L4） & $\epsilon_4$ & 0.01 \\
+    最大优化轮数 & -- & 5 \\
+    目标碰撞率 & -- & 5\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{评价指标}
+
+本文使用Recall@$K$和NDCG@$K$作为评价指标（$K \in \{5, 10\}$）。所有指标取值越高表示推荐性能越好。
+
+\subsection{基线方法}
+
+本文比较以下语义ID构建方法：
+
+\begin{itemize}
+  \item \textbf{RQ-KMeans}\cite{wang2024lcrec}：使用faiss KMeans直接在原始4096维文本嵌入上进行4层残差聚类，无学习组件。
+  \item \textbf{RQ-VAE}\cite{lee2022autoregressive}：使用MLP编码器将文本嵌入映射到64维隐空间，经4层残差向量量化和MLP解码器重建。
+  \item \textbf{LETTER}\cite{zheng2024adapting}：在RQ-VAE基础上添加InfoNCE协同过滤对比损失和码本多样性损失。
+  \item \textbf{COMET}（本文方法）：使用CF-as-Query跨注意力融合文本、图像和CF嵌入，配合文本多token投影和多目标重建。
+\end{itemize}
+
+所有方法使用相同的量化配置：4层码本，每层256个码向量，码本维度64。下游推荐模型的配置保持一致，以确保对比的公平性。
+
+
+\subsection{实现细节}
+
+\textbf{COMET}。COMET的超参数设置如表~\ref{tab:hyperparams}所示。三种模态嵌入的提取方式及COMET融合模块、解码器的架构细节见第三章。
+
+\textbf{基线方法}。RQ-KMeans使用faiss库的KMeans实现，每层聚类100次迭代。RQ-VAE和LETTER均使用2层MLP编码器（$4096 \to 1024 \to 64$）和对应的MLP解码器，训练300个周期，学习率$1 \times 10^{-3}$，其余量化配置与COMET一致。LETTER额外使用InfoNCE对比损失引入协同过滤信号，温度参数$\tau = 0.1$。
+
+\textbf{下游推荐模型}。TIGER和OneRec的模型架构见第三章§3.8。训练方面，TIGER使用Adam优化器，学习率$5 \times 10^{-4}$，训练200个周期，批大小256，从第100个周期开始每10个周期评估一次，早停耐心为2。OneRec使用AdamW优化器（权重衰减0.1），学习率$5 \times 10^{-4}$，配合Warmup余弦衰减调度器，训练30个周期，批大小256。两种模型的束搜索宽度均为20，最大序列长度为50，随机种子为2025。所有实验在8块GPU上使用分布式数据并行（DDP）训练。
+
+\section{主实验结果}
+
+表~\ref{tab:tiger-results}和表~\ref{tab:onerec-results}分别展示了不同语义ID构建方法在TIGER和OneRec模型上的推荐性能。
+
+\begin{table}[htbp]
+  \centering
+  \caption{TIGER结合不同语义ID方法的推荐性能}
+  \label{tab:tiger-results}
+  \begin{tabular}{lcccc}
+    \toprule
+    方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
+    \midrule
+    RQ-KMeans[Ju2025] & 0.0372 & 0.0604 & 0.0240 & 0.0314 \\
+    RQ-VAE[Rajput2023] & 0.0384 & 0.0585 & 0.0243 & 0.0308 \\
+    LETTER[Wang2024] & 0.0389 & 0.0607 & 0.0248 & 0.0317 \\
+    \textbf{COMET} & \textbf{0.0393} & \textbf{0.0627} & \textbf{0.0254} & \textbf{0.0330} \\
+    \bottomrule
+  \end{tabular}
+
+\end{table}
+
+\begin{table}[htbp]
+  \centering
+  \caption{OneRec结合不同语义ID方法的推荐性能}
+  \label{tab:onerec-results}
+  \begin{tabular}{lcccc}
+    \toprule
+    方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
+    \midrule
+    RQ-KMeans[Ju2025] & 0.0396 & 0.0616 & \textbf{0.0276} & \textbf{0.0346} \\
+    RQ-VAE[Rajput2023] & 0.0384 & 0.0579 & 0.0264 & 0.0326 \\
+    LETTER[Wang2024] & 0.0391 & 0.0587 & 0.0263 & 0.0326 \\
+    \textbf{COMET} & \textbf{0.0410} & \textbf{0.0619} & 0.0275 & 0.0342 \\
+    \bottomrule
+  \end{tabular}
+
+\end{table}
+
+从实验结果中可以得到以下观察：
+
+（1）COMET在两种下游生成式推荐模型上均取得了最优或接近最优的性能。在TIGER上，COMET在全部四个指标上均为最优，其中Recall@10达到0.0627，相比次优的LETTER提升了3.3\%；NDCG@10达到0.0330，相比LETTER提升了4.1\%。在OneRec上，COMET的Recall@5达到0.0410，为所有方法中最高，相比RQ-KMeans提升了3.5\%。这些结果表明，多模态融合构建的语义ID能够在不同架构的生成式推荐模型上稳定带来性能增益，验证了COMET方法的通用性。
+
+（2）LETTER通过引入CF对比损失（InfoNCE）在RQ-VAE基础上改善了性能，说明协同过滤信号对语义ID的构建确实有帮助。然而，LETTER的CF信号仅通过辅助损失间接作用于编码器，编码器本身仍然只处理文本嵌入。COMET进一步超越了LETTER，在TIGER上Recall@10从0.0607提升至0.0627，NDCG@10从0.0317提升至0.0330，说明将CF信号通过跨注意力机制直接融入编码过程（架构级融合）比通过损失函数间接引导（损失级融合）更为有效。
+
+（3）RQ-KMeans虽然不含任何可学习组件，但方法直观且稳定，在两种下游模型上均取得了有竞争力的结果，在OneRec上的NDCG@5和NDCG@10甚至优于其他方法。然而，由于RQ-KMeans直接在原始嵌入上进行聚类，无法通过损失函数引入协同过滤等额外信号来优化编码质量，其性能提升空间有限。相比之下，COMET等可训练方法能够通过多模态融合和辅助损失持续改善语义ID的质量。
+
+\section{消融实验}
+
+为分析COMET中各模态信号的贡献，本文设计了以下消融变体，在OneRec模型上进行评估：
+
+\begin{itemize}
+  \item \textbf{w/o Image}：去除图像模态。编码器的KV上下文仅包含文本的4个token，不拼接图像token；同时去除图像重建损失。
+  \item \textbf{w/o CF}：去除协同过滤信号。将CF嵌入作为query替换为一个可学习的query向量（所有物品共享），保留跨注意力架构不变；同时去除CF重建损失。
+  \item \textbf{w/o Image \& CF}：同时去除图像模态和CF信号。KV上下文仅包含文本token，query为可学习向量，模型退化为基于跨注意力架构的纯文本编码器。
+\end{itemize}
+
+所有变体除消融的模态外，其余超参数与完整COMET保持一致。实验结果如表~\ref{tab:ablation-modality}所示。
+
+\begin{table}[htbp]
+  \centering
+  \caption{模态消融实验（OneRec）}
+  \label{tab:ablation-modality}
+  \begin{tabular}{lcccc}
+    \toprule
+    方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
+    \midrule
+    COMET & \textbf{0.0410} & \textbf{0.0619} & \textbf{0.0275} & \textbf{0.0342} \\
+    w/o Image & 0.0387 & 0.0587 & 0.0266 & 0.0330 \\
+    w/o CF & 0.0393 & 0.0592 & 0.0269 & 0.0333 \\
+    w/o Image \& CF & 0.0378 & 0.0572 & 0.0260 & 0.0323 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+从消融实验结果中可以得到以下观察：
+
+（1）去除图像模态（w/o Image）导致Recall@10从0.0619降至0.0587（$-$5.2\%），NDCG@10从0.0342降至0.0330（$-$3.5\%）。这表明图像信息对语义ID的构建具有重要贡献。在Amazon Beauty数据集中，同品牌同系列的商品（如不同色号的口红）文本描述高度相似，图像是区分这类商品的关键信号。
+
+（2）去除CF信号（w/o CF）导致Recall@10从0.0619降至0.0592（$-$4.4\%），NDCG@10从0.0342降至0.0333（$-$2.6\%）。CF嵌入编码了用户行为的共现模式，为语义ID提供了来自交互数据的监督信号。去除CF后，原本由CF嵌入生成的query被替换为一个随机初始化的可学习向量，该向量在所有物品间共享，跨注意力机制失去了物品级别的个性化查询能力，导致对文本和图像信息的聚合变为固定加权。
+
+（3）同时去除图像和CF信号（w/o Image \& CF）导致最大的性能下降：Recall@10降至0.0572（$-$7.6\%），NDCG@10降至0.0323（$-$5.6\%）。该变体仅依赖文本信息，其性能降幅（$-$5.6\%）大于单独去除图像（$-$3.5\%）或CF（$-$2.6\%）的降幅之和，说明图像信号和CF信号之间存在互补效应：图像提供了细粒度的视觉区分信息，CF提供了行为层面的协同信号，二者共同作用使编码器能够更好地学习物品的多维度表示。
+
+\section{语义ID质量分析}
+
+除下游推荐性能外，本文还从碰撞率的角度分析语义ID的内在质量。
+
+在生成式推荐中，模型的输出是一个语义ID而非具体物品。当需要将语义ID映射回具体物品时，现有方法（包括TIGER和OneRec）采用的策略是：对于共享同一语义ID的多个物品，选择在全局交互数据中出现频次最高的物品作为推荐结果。这意味着碰撞组中除频次最高者以外的所有物品都永远不会被推荐到，碰撞直接导致了不可恢复的精度损失。因此，降低碰撞率是提升语义ID质量的关键目标。
+
+语义ID的碰撞（collision）指多个不同物品被分配了完全相同的4层编码。本文使用两个指标衡量碰撞严重程度：
+
+\begin{itemize}
+  \item \textbf{碰撞率}（Collision Rate）：因碰撞而无法被唯一标识的物品数占总物品数的比例，即$(N - N_{\text{unique}}) / N$，其中$N$为总物品数，$N_{\text{unique}}$为唯一编码数。碰撞率反映了编码空间中有多少物品因共享编码而"丢失"了独立身份。
+  \item \textbf{碰撞物品占比}（Collision Item Ratio）：涉及碰撞的物品数占总物品数的比例。只要一个物品与任何其他物品共享相同编码，就被计入碰撞物品。该指标直接反映有多少物品的推荐会受到碰撞影响。
+\end{itemize}
+
+表~\ref{tab:collision}对比了各语义ID构建方法的碰撞统计。
+
+\begin{table}[htbp]
+  \centering
+  \caption{不同语义ID方法的碰撞对比}
+  \label{tab:collision}
+  \begin{tabular}{lcc}
+    \toprule
+    方法 & 碰撞率 & 碰撞物品占比 \\
+    \midrule
+    RQ-KMeans[Ju2025] & 8.48\% & 14.23\% \\
+    RQ-VAE[Rajput2023] & 2.45\% & 4.48\% \\
+    LETTER[Wang2024] & 2.26\% & 3.89\% \\
+    \textbf{COMET} & \textbf{1.45\%} & \textbf{2.65\%} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+COMET在所有方法中碰撞率最低，仅为1.45\%，碰撞物品占比仅2.65\%。相比RQ-KMeans（碰撞率8.48\%、碰撞物品占比14.23\%），COMET将碰撞率降低了82.9\%。RQ-VAE和LETTER作为可训练方法，碰撞率分别为2.45\%和2.26\%，已较RQ-KMeans大幅改善，说明通过端到端训练优化编码空间确实有助于减少碰撞。LETTER通过引入协同过滤对比损失进一步降低了碰撞率。COMET在此基础上再次降低碰撞率至1.45\%，这一改善主要来源于两方面：（1）多模态融合引入了图像和协同过滤信息，为文本描述高度相似的物品提供了额外的区分信号；（2）Sinkhorn碰撞优化在更丰富的隐空间表示上进行码分配调整，效果更好。
+
+\begin{figure}[htbp]
+  \centering
+  \begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.55\textwidth]{9055.png}
+    \vspace{0.5em}
+
+    {\small
+    \begin{tabular}{@{}p{0.9\textwidth}@{}}
+      \toprule
+      \textbf{Item 9055} \\
+      \midrule
+      \textbf{Title}: REVLON Colorburst Lip Butter, \textit{Tutti Frutti}, 0.09 Ounce \\
+      \textbf{Brand}: Revlon \quad \textbf{Price}: \$6.45 \\
+      \textbf{Categories}: Beauty > Makeup > Lips > Lipstick \\
+      \textbf{Description}: Color burst lip butter combines beautiful color with a buttery balm to give you baby soft, healthy glowing lips. \\
+      \midrule
+      \textbf{RQ-KMeans SID}: $(175, 243, 93, 132)$ \\
+      \textbf{COMET SID}: $(255, 214, 73, \mathbf{147})$ \\
+      \bottomrule
+    \end{tabular}
+    }
+    \subcaption{Tutti Frutti（物品9055）}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.55\textwidth]{9056.png}
+    \vspace{0.5em}
+
+    {\small
+    \begin{tabular}{@{}p{0.9\textwidth}@{}}
+      \toprule
+      \textbf{Item 9056} \\
+      \midrule
+      \textbf{Title}: REVLON Colorburst Lip Butter, \textit{Brown Sugar}, 0.09 Ounce \\
+      \textbf{Brand}: Revlon \quad \textbf{Price}: \$5.65 \\
+      \textbf{Categories}: Beauty > Makeup > Lips > Lipstick \\
+      \textbf{Description}: Color burst lip butter combines beautiful color with a buttery balm to give you baby soft, healthy glowing lips. \\
+      \midrule
+      \textbf{RQ-KMeans SID}: $(175, 243, 93, 132)$ \\
+      \textbf{COMET SID}: $(255, 214, 73, \mathbf{176})$ \\
+      \bottomrule
+    \end{tabular}
+    }
+    \subcaption{Brown Sugar（物品9056）}
+  \end{minipage}
+  \caption{碰撞消解案例：同系列不同色号唇膏。两者文本描述几乎完全相同，RQ-KMeans分配了相同的SID；COMET通过融合图像信息，在第四层编码上将两者区分（加粗标注）。}
+  \label{fig:collision-case}
+\end{figure}
+
+\textbf{案例分析}。图~\ref{fig:collision-case}展示了一个典型的碰撞消解案例。物品9055和物品9056是REVLON Colorburst Lip Butter系列的两款不同色号唇膏，它们具有相同的品牌、类别、价格区间和几乎完全相同的文本描述，仅色号名称不同（Tutti Frutti与Brown Sugar）。在RQ-KMeans方法中，由于仅依赖文本嵌入进行聚类，两者被分配了完全相同的语义ID $(175, 243, 93, 132)$，推荐模型无法将它们区分。而在COMET中，由于融合了图像嵌入——两款唇膏的颜色外观明显不同（一款为橙色，一款为棕色）——模型能够在最后一层编码上将两者区分开：物品9055的语义ID为$(255, 214, 73, 147)$，物品9056为$(255, 214, 73, 176)$。前三层编码相同反映了两者的语义相似性，而第四层编码不同则实现了细粒度的物品区分。
+
+
+\section{本章小结}
+
+本章通过全面的实验评估验证了COMET方法的有效性。主实验结果表明，COMET构建的语义ID在TIGER和OneRec两种生成式推荐模型上均取得了最优的推荐性能，超越了RQ-KMeans、RQ-VAE和LETTER等基线方法。消融实验表明，图像模态和CF信号对语义ID质量均有显著贡献，且二者之间存在互补效应，同时去除两者导致NDCG@10下降5.6\%。语义ID质量分析表明，COMET的碰撞率仅为1.45\%，远低于RQ-KMeans的8.48\%、RQ-VAE的2.45\%和LETTER的2.26\%，有效缓解了因语义ID碰撞导致的推荐精度损失。

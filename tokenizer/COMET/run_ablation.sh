@@ -5,6 +5,7 @@ set -euo pipefail
 # COMET Ablation Experiments
 #   1) COMET_no_image  — remove image modality
 #   2) COMET_no_cf     — remove CF query (use learnable query)
+#   3) COMET_no_image_no_cf — remove both image and CF
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -95,8 +96,28 @@ nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
 PID2=$!
 echo "  PID=${PID2}  Log: ${LOG2}"
 
+# ============================================================================
+# Experiment 3: COMET without image AND CF
+# ============================================================================
+echo "========================================"
+echo "  Ablation 3: COMET without image & CF"
+echo "========================================"
+
+LOG3="${SCRIPT_DIR}/ablation_no_image_no_cf_$(date +%Y%m%d_%H%M%S).log"
+
+nohup python3 "${SCRIPT_DIR}/process_embedding.py" \
+  "${COMMON_ARGS[@]}" \
+  --output_file "${OUTPUT_DIR}/item_COMET_no_image_no_cf_codes.parquet" \
+  --model_path "${MODEL_DIR}/beauty_comet_no_image_no_cf.pth" \
+  --ablate_image --ablate_cf \
+  > "${LOG3}" 2>&1 &
+
+PID3=$!
+echo "  PID=${PID3}  Log: ${LOG3}"
+
 echo ""
-echo "Both ablation experiments launched."
+echo "All ablation experiments launched."
 echo "Watch logs:"
 echo "  tail -f ${LOG1}"
 echo "  tail -f ${LOG2}"
+echo "  tail -f ${LOG3}"

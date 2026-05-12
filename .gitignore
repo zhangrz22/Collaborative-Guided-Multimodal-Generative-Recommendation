@@ -9,4 +9,3 @@ SASRec/train.pid
 *.pth
 *.parquet
 *.json
-/paper

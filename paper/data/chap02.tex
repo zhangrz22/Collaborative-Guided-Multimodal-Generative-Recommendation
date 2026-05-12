@@ -1,0 +1,77 @@
+% !TeX root = ../thuthesis-example.tex
+
+\chapter{相关工作}
+
+本章对与本文研究相关的工作进行综述，主要包括序列推荐、生成式推荐、语义ID构建方法和多模态推荐四个方面。
+
+\section{序列推荐}
+
+序列推荐旨在根据用户的历史交互序列建模其动态偏好，预测下一个可能交互的物品。早期的序列推荐方法基于马尔可夫链，假设下一个交互仅依赖于最近的少量交互\cite{rendle2010factorizing}。随着深度学习的发展，基于神经网络的序列推荐方法取得了显著进展。
+
+GRU4Rec\cite{hidasi2016session}首次将门控循环单元（GRU）引入基于会话的推荐，通过循环神经网络建模交互序列的时序依赖关系。Caser\cite{tang2018personalized}则从另一个角度出发，将用户的近期交互嵌入矩阵视为"图像"，利用卷积神经网络捕捉序列中的局部模式。
+
+SASRec\cite{kang2018self}是序列推荐领域的里程碑工作，它将自注意力机制引入序列推荐，通过单向Transformer编码器对用户历史交互序列进行建模。SASRec使用因果注意力掩码确保每个位置只关注之前的交互，有效捕捉了长距离依赖关系。在此基础上，BERT4Rec\cite{sun2019bert4rec}借鉴BERT的掩码语言模型思想，采用双向自注意力和完形填空训练策略，在部分场景下取得了进一步提升。
+
+值得注意的是，上述方法均基于独立的物品ID进行嵌入学习，物品之间的语义关联完全依赖于协同过滤信号通过训练隐式习得。这种方式在冷启动场景下表现不佳，且无法利用物品的内容信息。本文使用SASRec作为协同过滤嵌入的提取器，其学习到的物品嵌入编码了用户行为模式中的协同信号，为COMET融合模块提供了重要的输入。
+
+\section{生成式推荐}
+
+生成式推荐将推荐问题重新表述为序列生成任务，其灵感源自信息检索领域的可微搜索索引（Differentiable Search Index, DSI）\cite{tay2022transformer}。DSI的核心思想是训练一个Transformer模型直接将查询映射为文档标识符，无需传统的索引-检索两阶段流程。生成式推荐将这一思想迁移到推荐场景：将物品映射为离散的语义ID，训练生成模型根据用户历史自回归地生成目标物品的语义ID。
+
+TIGER\cite{rajput2023recommender}是生成式推荐的代表性工作。它使用RQ-VAE将物品的文本嵌入量化为多层语义ID，然后基于T5\cite{raffel2020exploring}编码器-解码器架构，将用户历史中所有物品的语义ID拼接为输入序列，自回归地生成目标物品的4层语义ID。TIGER还提出了基于前缀树（Trie）的约束束搜索，确保生成的语义ID序列一定对应某个真实物品，有效避免了无效生成。
+
+P5\cite{geng2022recommendation}从另一个角度探索生成式推荐，将多种推荐任务（评分预测、序列推荐、解释生成等）统一为自然语言生成任务，使用单一的T5模型处理。LC-Rec\cite{zheng2024adapting}在此基础上提出了LETTER语义ID构建方法和对齐-生成两阶段训练范式。
+
+OneRec\cite{onerec}是另一种代表性的生成式推荐模型，采用了不同于T5的自定义Transformer架构。OneRec使用跨注意力机制将用户历史编码为键值（Key-Value）缓存，解码器通过跨注意力查询历史上下文并自回归生成目标语义ID。其架构借鉴了大语言模型的设计，使用RMSNorm\cite{zhang2019root}、SiLU门控前馈网络\cite{shazeer2020glu}和更大的模型容量（1024维、12层）。OneRec还提出了预裁剪（Precut）策略加速束搜索，在每一步先筛选概率最高的候选token再进行束扩展。
+
+生成式推荐的性能很大程度上取决于语义ID的质量。如果语义ID不能有效编码物品特征，生成模型即使结构再先进也难以学习到有效的推荐模式。因此，本文聚焦于语义ID构建方法的改进。
+
+\section{语义ID构建方法}
+
+语义ID构建的目标是为每个物品分配一个由多层离散编码组成的标识符，使得语义相似的物品具有相近的编码。目前主流的方法基于残差量化（Residual Quantization）。
+
+\subsection{RQ-VAE}
+
+残差量化变分自编码器（RQ-VAE）\cite{lee2022autoregressive}是语义ID构建的基础框架。其结构包含编码器、残差向量量化器和解码器三部分。
+
+编码器将物品的高维嵌入（如4096维的文本嵌入）通过多层感知机映射到低维隐向量$\mathbf{z} \in \mathbb{R}^{d}$（如$d=32$）。残差向量量化器包含$L$层（通常$L=4$），每层维护一个码本$\mathbf{C}^{(l)} = \{\mathbf{c}_1^{(l)}, \ldots, \mathbf{c}_K^{(l)}\} \subset \mathbb{R}^{d}$（$K$通常为256）。量化过程按层级进行：
+\begin{align}
+  \mathbf{r}^{(0)} &= \mathbf{z}, \\
+  k^{(l)} &= \arg\min_{k} \|\mathbf{r}^{(l-1)} - \mathbf{c}_k^{(l)}\|^2, \quad l = 1, \ldots, L, \\
+  \mathbf{r}^{(l)} &= \mathbf{r}^{(l-1)} - \mathbf{c}_{k^{(l)}}^{(l)},
+\end{align}
+其中$\mathbf{r}^{(l)}$为第$l$层的残差，$k^{(l)}$为第$l$层分配的编码索引。物品的语义ID即为$(k^{(1)}, k^{(2)}, \ldots, k^{(L)})$。
+
+解码器将量化后的表示$\hat{\mathbf{z}} = \sum_{l=1}^{L} \mathbf{c}_{k^{(l)}}^{(l)}$重建为原始嵌入。训练损失为重建损失与承诺损失（commitment loss）之和：
+\begin{equation}
+  \mathcal{L}_{\text{RQ-VAE}} = \|\mathbf{x}_{\text{rec}} - \mathbf{x}\|^2 + \beta \sum_{l=1}^{L} \|\mathbf{r}^{(l-1)} - \text{sg}[\mathbf{c}_{k^{(l)}}^{(l)}]\|^2,
+\end{equation}
+其中$\text{sg}[\cdot]$表示停止梯度操作，$\beta$为承诺损失权重。码本通过指数移动平均（EMA）更新，并配合死码重启机制维持码本利用率。
+
+\subsection{LETTER}
+
+LETTER\cite{zheng2024adapting}在RQ-VAE的基础上做了两项重要改进：
+
+第一，\textbf{引入协同过滤对比损失}。LETTER使用预训练的SASRec模型提取物品的协同过滤嵌入$\mathbf{e}_{\text{cf}}$，然后在训练损失中添加InfoNCE对比损失：
+\begin{equation}
+  \mathcal{L}_{\text{cf}} = -\log \frac{\exp(\text{sim}(\hat{\mathbf{z}}, \mathbf{e}_{\text{cf}}) / \tau)}{\sum_{j=1}^{B} \exp(\text{sim}(\hat{\mathbf{z}}, \mathbf{e}_{\text{cf},j}) / \tau)},
+\end{equation}
+其中$\text{sim}(\cdot, \cdot)$为余弦相似度，$\tau=0.07$为温度参数，$B$为批大小。这一损失要求量化后的语义表示与对应的协同过滤嵌入在表示空间中对齐。为避免对比损失干扰编码器和码本的初始化，LETTER采用了预热-渐变调度：前50个训练周期不使用CF损失，之后在50个周期内线性增加其权重至目标值。
+
+第二，\textbf{码本多样性损失}。LETTER对每层码本的码向量进行KMeans聚类，然后在同一聚类内的码向量之间施加对比学习损失，鼓励聚类内部的码向量保持可区分性，促进码本的充分利用。
+
+LETTER的总损失为：
+\begin{equation}
+  \mathcal{L}_{\text{LETTER}} = \mathcal{L}_{\text{rec}} + \mathcal{L}_{\text{vq}} + \alpha \mathcal{L}_{\text{cf}} + \gamma \mathcal{L}_{\text{div}},
+\end{equation}
+其中$\alpha$为CF损失权重（经调度后为0.05），$\gamma$为多样性损失权重（0.0001）。
+
+LETTER的局限性在于：CF信号仅通过辅助损失间接影响编码过程，需要额外引入对比损失函数并仔细调节其权重；同时仍仅使用文本模态作为编码器输入，未利用图像信息。
+
+\section{多模态推荐}
+
+多模态信息在推荐系统中的应用由来已久。VBPR\cite{he2016vbpr}最早将视觉特征引入协同过滤，使用预训练CNN提取物品图像特征并与ID嵌入融合进行推荐。此后，大量工作探索了将文本、图像、音频等多模态信息融入推荐模型的方法\cite{wei2019mmgcn,zhou2023comprehensive}。
+
+近年来，随着预训练多模态模型（如CLIP\cite{radford2021learning}）的发展，多模态推荐进入了新阶段。CLIP通过对比学习在大规模图文对上训练，能够提取具有跨模态对齐能力的视觉表示，被广泛应用于多模态推荐中的图像特征提取。
+
+然而，现有的多模态推荐工作主要集中在推荐模型层面（如何在协同过滤或序列推荐模型中融合多模态特征），\textbf{尚未有工作探索在语义ID构建阶段融合多模态信息}。这正是本文工作的切入点：在语义ID的编码阶段就将文本、图像和协同过滤信号有效融合，使生成的语义ID同时编码多种模态的信息。

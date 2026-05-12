@@ -1,0 +1,102 @@
+% !TeX root = ./thuthesis-example.tex
+
+% 论文基本信息配置
+
+\thusetup{
+  %******************************
+  % 注意：
+  %   1. 配置里面不要出现空行
+  %   2. 不需要的配置信息可以删除
+  %   3. 建议先阅读文档中所有关于选项的说明
+  %******************************
+  %
+  % 输出格式
+  %   选择打印版（print）或用于提交的电子版（electronic），前者会插入空白页以便直接双面打印
+  %
+  output = electronic,
+  %
+  % 标题
+  %   可使用"\\"命令手动控制换行
+  %
+  title  = {基于协同引导的多模态生成式推荐方法研究},
+  title* = {Research on Collaborative-Guided Multimodal Generative Recommendation},
+  %
+  % 培养单位
+  %   填写所属院系的全名
+  %
+  department = {软件学院},
+  %
+  % 学科/专业
+  %   本科生填写专业名称
+  %
+  discipline  = {软件工程},
+  discipline* = {Software Engineering},
+  %
+  % 姓名
+  %
+  author  = {张镕州},
+  author* = {To be filled},
+  %
+  % 指导教师
+  %   中文姓名和职称之间以英文逗号","分开
+  %
+  supervisor  = {张慧, 副研究员},
+  supervisor* = {Professor To-be-filled},
+  %
+  % 日期
+  %   使用 ISO 格式；默认为当前时间
+  %
+  % date = {2026-06-01},
+  %
+  % 是否在中文封面后的空白页生成书脊（默认 false）
+  %
+  include-spine = false,
+}
+
+% 载入所需的宏包
+
+% 定理类环境宏包
+\usepackage{amsthm}
+
+\thusetup{
+  math-font = xits,
+}
+
+% 表格加脚注
+\usepackage{threeparttable}
+
+% 表格中支持跨行
+\usepackage{multirow}
+
+% 跨页表格
+\usepackage{longtable}
+
+% 算法
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% 量和单位
+\usepackage{siunitx}
+
+% 参考文献使用 BibTeX + natbib 宏包
+% 本科生参考文献的著录格式
+\usepackage[sort]{natbib}
+\bibliographystyle{thuthesis-bachelor}
+
+% 定义所有的图片文件在 figures 子目录下
+\graphicspath{{figures/}}
+
+% 数学命令
+\makeatletter
+\newcommand\dif{%  % 微分符号
+  \mathop{}\!%
+  \ifthu@math@style@TeX
+    d%
+  \else
+    \mathrm{d}%
+  \fi
+}
+\makeatother
+
+% hyperref 宏包在最后调用
+\usepackage{hyperref}

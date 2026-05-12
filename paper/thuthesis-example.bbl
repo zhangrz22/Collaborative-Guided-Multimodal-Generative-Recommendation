@@ -1,0 +1,179 @@
+\begin{thebibliography}{22}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{#1}
+\expandafter\ifx\csname urlstyle\endcsname\relax\else
+  \urlstyle{same}\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \DeclareUrlCommand\doi{\urlstyle{rm}}
+  \def\eprint#1#2{#2}
+\else
+  \def\doi#1{\href{https://doi.org/#1}{\nolinkurl{#1}}}
+  \let\eprint\href
+\fi
+
+\bibitem[Hidasi et~al.(2016)Hidasi, Karatzoglou, Baltrunas, and
+  Tikk]{hidasi2016session}
+HIDASI B, KARATZOGLOU A, BALTRUNAS L, et~al.
+\newblock Session-based recommendations with recurrent neural
+  networks\allowbreak[C]//\allowbreak
+Proceedings of the 4th International Conference on Learning Representations
+  (ICLR).
+\newblock 2016.
+
+\bibitem[Kang et~al.(2018)Kang and McAuley]{kang2018self}
+KANG W~C, MCAULEY J.
+\newblock Self-attentive sequential recommendation\allowbreak[C]//\allowbreak
+Proceedings of the IEEE International Conference on Data Mining (ICDM).
+\newblock 2018: 197-206.
+
+\bibitem[Rajput et~al.(2023)Rajput, Mehta, Singh, Keshavan, Vu, Helber, Hong,
+  Tay, Tran, Samost, Kula, Chi, and Sathiamoorthy]{rajput2023recommender}
+RAJPUT S, MEHTA N, SINGH A, et~al.
+\newblock Recommender systems with generative
+  retrieval\allowbreak[C]//\allowbreak
+Advances in Neural Information Processing Systems (NeurIPS).
+\newblock 2023.
+
+\bibitem[Zheng et~al.(2024)Zheng, Hou, Lu, Chen, Zhao, Chen, and
+  Wen]{zheng2024adapting}
+ZHENG B, HOU Y, LU H, et~al.
+\newblock Adapting large language models by integrating collaborative semantics
+  for recommendation\allowbreak[C]//\allowbreak
+Proceedings of the IEEE International Conference on Data Engineering (ICDE).
+\newblock 2024.
+
+\bibitem[Lee et~al.(2022)Lee, Kim, Kim, Cho, and Han]{lee2022autoregressive}
+LEE D, KIM C, KIM S, et~al.
+\newblock Autoregressive image generation using residual
+  quantization\allowbreak[C]//\allowbreak
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+  Recognition (CVPR).
+\newblock 2022: 11523-11532.
+
+\bibitem[Rendle et~al.(2010)Rendle, Freudenthaler, and
+  Schmidt-Thieme]{rendle2010factorizing}
+RENDLE S, FREUDENTHALER C, SCHMIDT-THIEME L.
+\newblock Factorizing personalized {M}arkov chains for next-basket
+  recommendation\allowbreak[C]//\allowbreak
+Proceedings of the International Conference on World Wide Web (WWW).
+\newblock 2010: 811-820.
+
+\bibitem[Tang et~al.(2018)Tang and Wang]{tang2018personalized}
+TANG J, WANG K.
+\newblock Personalized top-{N} sequential recommendation via convolutional
+  sequence embedding\allowbreak[C]//\allowbreak
+Proceedings of the ACM International Conference on Web Search and Data Mining
+  (WSDM).
+\newblock 2018: 565-573.
+
+\bibitem[Sun et~al.(2019)Sun, Liu, Wu, Pei, Lin, Ou, and
+  Jiang]{sun2019bert4rec}
+SUN F, LIU J, WU J, et~al.
+\newblock {BERT4Rec}: Sequential recommendation with bidirectional encoder
+  representations from transformers\allowbreak[C]//\allowbreak
+Proceedings of the ACM International Conference on Information and Knowledge
+  Management (CIKM).
+\newblock 2019: 1441-1450.
+
+\bibitem[Tay et~al.(2022)Tay, Tran, Dehghani, Ni, Bahri, Mehta, Qin, Hui, Zhao,
+  Gupta, et~al.]{tay2022transformer}
+TAY Y, TRAN V, DEHGHANI M, et~al.
+\newblock Transformer memory as a differentiable search
+  index\allowbreak[C]//\allowbreak
+Advances in Neural Information Processing Systems (NeurIPS).
+\newblock 2022.
+
+\bibitem[Raffel et~al.(2020)Raffel, Shazeer, Roberts, Lee, Narang, Matena,
+  Zhou, Li, and Liu]{raffel2020exploring}
+RAFFEL C, SHAZEER N, ROBERTS A, et~al.
+\newblock Exploring the limits of transfer learning with a unified text-to-text
+  transformer\allowbreak[J].
+\newblock Journal of Machine Learning Research, 2020, 21\allowbreak (140):
+  1-67.
+
+\bibitem[Geng et~al.(2022)Geng, Liu, Fu, Ge, and Zhang]{geng2022recommendation}
+GENG S, LIU S, FU Z, et~al.
+\newblock Recommendation as language processing ({RLP}): A unified pretrain,
+  personalized prompt \& predict paradigm ({P5})\allowbreak[C]//\allowbreak
+Proceedings of the ACM Conference on Recommender Systems (RecSys).
+\newblock 2022: 299-315.
+
+\bibitem[Zhang et~al.(2025)Zhang, Sun, Xin, Zhang, Lu, Tan, Xu, and
+  Zheng]{onerec}
+ZHANG Z, SUN Z, XIN X, et~al.
+\newblock {OneRec}: Unifying retrieve and rank with generative recommender and
+  iterative preference alignment\allowbreak[A].
+\newblock 2025.
+
+\bibitem[Zhang et~al.(2019)Zhang and Sennrich]{zhang2019root}
+ZHANG B, SENNRICH R.
+\newblock Root mean square layer normalization\allowbreak[C]//\allowbreak
+Advances in Neural Information Processing Systems (NeurIPS).
+\newblock 2019.
+
+\bibitem[Shazeer(2020)]{shazeer2020glu}
+SHAZEER N.
+\newblock {GLU} variants improve transformer\allowbreak[A].
+\newblock 2020.
+
+\bibitem[He et~al.(2016)He and McAuley]{he2016vbpr}
+HE R, MCAULEY J.
+\newblock {VBPR}: Visual {B}ayesian personalized ranking from implicit
+  feedback\allowbreak[C]//\allowbreak
+Proceedings of the AAAI Conference on Artificial Intelligence (AAAI).
+\newblock 2016: 144-150.
+
+\bibitem[Wei et~al.(2019)Wei, Wang, Nie, He, Hong, and Chua]{wei2019mmgcn}
+WEI Y, WANG X, NIE L, et~al.
+\newblock {MMGCN}: Multi-modal graph convolution network for personalized
+  recommendation of micro-video\allowbreak[C]//\allowbreak
+Proceedings of the ACM International Conference on Multimedia (MM).
+\newblock 2019: 1437-1445.
+
+\bibitem[Zhou et~al.(2023)Zhou, Zhou, Zeng, Zhang, and
+  Shen]{zhou2023comprehensive}
+ZHOU H, ZHOU X, ZENG Z, et~al.
+\newblock A comprehensive survey on multimodal recommender systems: Taxonomy,
+  evaluation, and future directions\allowbreak[A].
+\newblock 2023.
+
+\bibitem[Radford et~al.(2021)Radford, Kim, Hallacy, Ramesh, Goh, Agarwal,
+  Sastry, Askell, Mishkin, Clark, et~al.]{radford2021learning}
+RADFORD A, KIM J~W, HALLACY C, et~al.
+\newblock Learning transferable visual models from natural language
+  supervision\allowbreak[C]//\allowbreak
+Proceedings of the International Conference on Machine Learning (ICML).
+\newblock 2021: 8748-8763.
+
+\bibitem[Wang et~al.(2025)Wang, Zhang, Wu, Yin, Hu, He, Mao, Hou, Gu, Yan,
+  Zhang, and Lin]{qwen3embedding}
+WANG B, ZHANG J, WU B, et~al.
+\newblock Qwen3-embedding: Advancing text embedding and reranking through
+  foundation models\allowbreak[A].
+\newblock 2025.
+
+\bibitem[Cuturi(2013)]{cuturi2013sinkhorn}
+CUTURI M.
+\newblock Sinkhorn distances: Lightspeed computation of optimal
+  transport\allowbreak[C]//\allowbreak
+Advances in Neural Information Processing Systems (NeurIPS).
+\newblock 2013: 2292-2300.
+
+\bibitem[McAuley et~al.(2015)McAuley, Targett, Shi, and van~den
+  Hengel]{mcauley2015image}
+MCAULEY J, TARGETT C, SHI Q, et~al.
+\newblock Image-based recommendations on styles and
+  substitutes\allowbreak[C]//\allowbreak
+Proceedings of the International ACM SIGIR Conference on Research and
+  Development in Information Retrieval (SIGIR).
+\newblock 2015: 43-52.
+
+\bibitem[Wang et~al.(2024)Wang, Chen, Zhao, Cao, Tao, Li, and
+  Liu]{wang2024lcrec}
+WANG Y, CHEN L, ZHAO J, et~al.
+\newblock {LC-Rec}: Semantics-guided generative retrieval for sequential
+  recommendation\allowbreak[C]//\allowbreak
+Proceedings of the European Conference on Information Retrieval (ECIR).
+\newblock 2024.
+
+\end{thebibliography}

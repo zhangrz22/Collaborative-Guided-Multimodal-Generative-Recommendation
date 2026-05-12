@@ -1,0 +1,63 @@
+% !TeX encoding = UTF-8
+% !TeX program = xelatex
+% !TeX spellcheck = en_US
+
+\documentclass[degree=bachelor]{thuthesis}
+  % 学位 degree:
+  %   doctor | master | bachelor | postdoc
+  % 字体库 fontset
+  %   windows | mac | fandol | ubuntu
+  % 建议终版使用 Windows 平台的字体编译
+
+
+% 论文基本配置，加载宏包等全局配置
+\input{thusetup}
+
+
+\begin{document}
+
+% 封面
+\maketitle
+
+% 使用授权的说明
+\copyrightpage
+
+\frontmatter
+\input{data/abstract}
+
+% 目录
+\tableofcontents
+
+% 插图和附表清单
+\listoffigures           % 插图清单
+\listoftables            % 附表清单
+
+% 符号对照表（如有需要取消注释）
+% \input{data/denotation}
+
+
+% 正文部分
+\mainmatter
+\input{data/chap01}
+\input{data/chap02}
+\input{data/chap03}
+\input{data/chap04}
+\input{data/chap05}
+
+% 参考文献
+\bibliography{ref/refs}
+
+% 附录（如有需要取消注释）
+% \appendix
+% \input{data/appendix}
+
+% 其他部分
+\backmatter
+
+% 致谢
+\input{data/acknowledgements}
+
+% 声明
+\statement[page-style=empty]
+
+\end{document}
