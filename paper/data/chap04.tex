@@ -235,7 +235,8 @@ COMET在所有方法中碰撞率最低，仅为1.45\%，碰撞物品占比仅2.6
       \bottomrule
     \end{tabular}
     }
-    \subcaption{Tutti Frutti（物品9055）}
+    \subcaption[冲突率案例分析a]{Tutti Frutti（物品9055）}
+    \label{fig:collision-case-a}
   \end{minipage}
   \hfill
   \begin{minipage}[t]{0.48\textwidth}
@@ -258,9 +259,10 @@ COMET在所有方法中碰撞率最低，仅为1.45\%，碰撞物品占比仅2.6
       \bottomrule
     \end{tabular}
     }
-    \subcaption{Brown Sugar（物品9056）}
+    \subcaption[冲突率案例分析b]{Brown Sugar（物品9056）}
+    \label{fig:collision-case-b}
   \end{minipage}
-  \caption{碰撞消解案例：同系列不同色号唇膏。两者文本描述几乎完全相同，RQ-KMeans分配了相同的SID；COMET通过融合图像信息，在第四层编码上将两者区分（加粗标注）。}
+  \caption{冲突率案例分析:同系列不同色号唇膏的语义ID对比}
   \label{fig:collision-case}
 \end{figure}
 

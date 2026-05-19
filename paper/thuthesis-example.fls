@@ -288,6 +288,9 @@ OUTPUT thuthesis-example.toc
 INPUT ./thuthesis-example.lof
 INPUT ./thuthesis-example.lof
 INPUT thuthesis-example.lof
+INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi12.tfm
+INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi9.tfm
+INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi7.tfm
 OUTPUT thuthesis-example.lof
 INPUT ./thuthesis-example.lot
 INPUT ./thuthesis-example.lot
@@ -298,9 +301,6 @@ INPUT ./data/chap01.tex
 INPUT ./data/chap01.tex
 INPUT ./data/chap01.tex
 INPUT data/chap01.tex
-INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi12.tfm
-INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi9.tfm
-INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi7.tfm
 INPUT ./data/chap02.tex
 INPUT ./data/chap02.tex
 INPUT ./data/chap02.tex
