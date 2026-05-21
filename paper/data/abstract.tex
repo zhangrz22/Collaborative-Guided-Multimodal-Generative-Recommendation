@@ -3,12 +3,12 @@
 % 中英文摘要和关键字
 
 \begin{abstract}
-  生成式推荐是一种将推荐问题转化为序列生成任务的新范式，其核心在于为每个物品构建高质量的语义ID（Semantic ID）。
-  现有的语义ID构建方法，如RQ-VAE仅利用文本语义信息进行向量量化，而LETTER虽然通过辅助对比损失引入了协同过滤信号，但其融合方式较为间接，且均未考虑视觉模态的信息。
-  针对上述不足，本文提出了COMET（Collaborative-guided Multimodal Encoding Tokenizer），一种基于协同过滤引导的多模态语义ID构建方法。
-  COMET的核心是一个CF-as-Query跨注意力融合模块：以协同过滤嵌入作为查询向量，以文本多token投影和图像嵌入构成的键值序列为键值对，通过堆叠的跨注意力和前馈网络自适应地从文本和视觉特征中提取对推荐有用的信息。
+  生成式推荐是一种将推荐问题转化为序列生成任务的新范式，其核心在于为每个物品构建高质量的语义标识符。
+  现有的语义标识符构建方法，有的仅利用文本语义信息进行向量量化，有的虽然通过辅助对比损失引入了协同过滤信号，但其融合方式较为间接，且均未考虑视觉模态的信息。
+  针对上述不足，本文提出了COMET（Collaborative-guided Multimodal Encoding Tokenizer），一种基于协同过滤引导的多模态语义标识符构建方法。
+  COMET的核心是一个以协同过滤为查询的跨注意力融合模块：以协同过滤嵌入作为查询向量，以文本多token投影和图像嵌入构成的键值序列为键值对，通过堆叠的跨注意力和前馈网络自适应地从文本和视觉特征中提取对推荐有用的信息。
   同时，COMET采用多目标重建策略，以加权方式同时重建文本、图像和协同过滤嵌入，促进多模态信息在隐空间中的均衡编码。
-  在Amazon Beauty数据集上的实验表明，基于COMET构建的语义ID在TIGER和OneRec两种主流生成式推荐模型上均取得了优于RQ-KMeans、RQ-VAE和LETTER的推荐性能。
+  在Amazon Beauty数据集上的实验表明，本文提出的方法构建的语义标识符在两种主流生成式推荐模型上均取得了较好的推荐性能。
 
   \thusetup{
     keywords = {生成式推荐, 语义ID, 多模态融合, 协同过滤, 残差向量量化},
@@ -16,12 +16,12 @@
 \end{abstract}
 
 \begin{abstract*}
-  Generative recommendation is an emerging paradigm that formulates the recommendation task as a sequence generation problem, where the quality of item Semantic IDs (SIDs) plays a critical role.
-  Existing SID construction methods such as RQ-VAE rely solely on textual semantics for vector quantization, while LETTER introduces collaborative filtering signals through an auxiliary contrastive loss in an indirect manner, and neither incorporates visual modality information.
-  To address these limitations, this thesis proposes COMET (Collaborative-guided Multimodal Encoding Tokenizer), a multimodal SID construction method guided by collaborative filtering.
-  The core of COMET is a CF-as-Query cross-attention fusion module that uses collaborative filtering embeddings as queries and a key-value sequence composed of multi-token text projections and image embeddings, adaptively extracting recommendation-relevant information from textual and visual features through stacked cross-attention and feed-forward layers.
+  Generative recommendation is an emerging paradigm that formulates the recommendation task as a sequence generation problem, where the quality of item semantic identifiers plays a critical role.
+  Existing semantic identifier construction methods have limitations: some rely solely on textual semantics for vector quantization, while others introduce collaborative filtering signals through an auxiliary contrastive loss in an indirect manner, and neither incorporates visual modality information.
+  To address these limitations, this thesis proposes COMET (Collaborative-guided Multimodal Encoding Tokenizer), a multimodal semantic identifier construction method guided by collaborative filtering.
+  The core of COMET is a cross-attention fusion module with collaborative filtering as query: it uses collaborative filtering embeddings as queries and a key-value sequence composed of multi-token text projections and image embeddings, adaptively extracting recommendation-relevant information from textual and visual features through stacked cross-attention and feed-forward layers.
   Furthermore, COMET adopts a multi-target reconstruction strategy that simultaneously reconstructs text, image, and collaborative filtering embeddings with weighted losses, promoting balanced multimodal encoding in the latent space.
-  Experiments on the Amazon Beauty dataset demonstrate that SIDs constructed by COMET achieve superior recommendation performance over RQ-KMeans, RQ-VAE, and LETTER on both the TIGER and OneRec generative recommendation models.
+  Experiments on the Amazon Beauty dataset demonstrate that the proposed method achieves favorable recommendation performance on two mainstream generative recommendation models.
 
   \thusetup{
     keywords* = {Generative Recommendation, Semantic ID, Multimodal Fusion, Collaborative Filtering, Residual Vector Quantization},

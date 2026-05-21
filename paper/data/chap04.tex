@@ -48,7 +48,6 @@
     每层码本大小 & $K$ & 256 \\
     码本维度 & $d_e$ & 64 \\
     承诺损失权重 & $\beta$ & 0.25 \\
-    多样性损失权重 & $\gamma$ & 0.0001 \\
     EMA衰减因子 & $\gamma_{\text{ema}}$ & 0.99 \\
     死码阈值 & $\delta$ & 2.0 \\
     \midrule
@@ -74,7 +73,21 @@
 
 \subsection{评价指标}
 
-本文使用Recall@$K$和NDCG@$K$作为评价指标（$K \in \{5, 10\}$）。所有指标取值越高表示推荐性能越好。
+本文使用Recall@$K$和NDCG@$K$作为评价指标（$K \in \{5, 10\}$）。
+
+\textbf{Recall@$K$}衡量测试集中的目标物品是否出现在推荐列表的前$K$个位置：
+\begin{equation}
+  \text{Recall@}K = \frac{1}{|\mathcal{U}|} \sum_{u \in \mathcal{U}} \mathbb{I}(i_u \in \text{Top-}K_u),
+\end{equation}
+其中$\mathcal{U}$为测试用户集合，$i_u$为用户$u$的测试物品，$\text{Top-}K_u$为为用户$u$推荐的前$K$个物品，$\mathbb{I}(\cdot)$为指示函数。
+
+\textbf{NDCG@$K$}（Normalized Discounted Cumulative Gain）考虑了推荐位置的影响，位置越靠前权重越高：
+\begin{equation}
+  \text{NDCG@}K = \frac{1}{|\mathcal{U}|} \sum_{u \in \mathcal{U}} \frac{\mathbb{I}(i_u \in \text{Top-}K_u)}{\log_2(\text{pos}_u+1)},
+\end{equation}
+其中$\text{pos}_u$为目标物品$i_u$在推荐列表中的位置。
+
+所有指标取值越高表示推荐性能越好。
 
 \subsection{基线方法}
 
@@ -83,20 +96,27 @@
 \begin{itemize}
   \item \textbf{RQ-KMeans}\cite{wang2024lcrec}：使用faiss KMeans直接在原始4096维文本嵌入上进行4层残差聚类，无学习组件。
   \item \textbf{RQ-VAE}\cite{lee2022autoregressive}：使用MLP编码器将文本嵌入映射到64维隐空间，经4层残差向量量化和MLP解码器重建。
-  \item \textbf{LETTER}\cite{zheng2024adapting}：在RQ-VAE基础上添加InfoNCE协同过滤对比损失和码本多样性损失。
+  \item \textbf{LETTER}\cite{zheng2024adapting}：在RQ-VAE基础上引入协同过滤信号。使用预训练的SASRec模型提取物品的协同过滤嵌入，通过InfoNCE对比损失要求量化后的隐向量与协同过滤嵌入在表示空间中对齐，从而将用户行为模式融入语义ID构建过程。
   \item \textbf{COMET}（本文方法）：使用CF-as-Query跨注意力融合文本、图像和CF嵌入，配合文本多token投影和多目标重建。
 \end{itemize}
 
 所有方法使用相同的量化配置：4层码本，每层256个码向量，码本维度64。下游推荐模型的配置保持一致，以确保对比的公平性。
 
+\subsection{下游推荐模型}
+
+COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐模型。本文使用两种代表性模型进行评估。
+
+\textbf{TIGER}。TIGER\cite{rajput2023recommender}基于标准T5\cite{raffel2020exploring}编码器-解码器架构。编码器将用户历史中每个物品的4层语义ID转化为特殊token（如$\langle s\_a\_3 \rangle$）并编码，解码器自回归地逐层生成目标物品的语义ID。为确保生成的ID对应真实物品，TIGER使用基于前缀树的约束束搜索。
+
+\textbf{OneRec}。OneRec\cite{onerec}采用自定义Transformer架构。用户历史序列的语义ID嵌入被转换为键值表示，Transformer层通过跨注意力查询历史上下文、通过自注意力处理已生成的序列，逐位置自回归生成目标语义ID。其架构借鉴大语言模型设计，使用RMSNorm、SiLU门控FFN等技术，模型容量更大。
 
 \subsection{实现细节}
 
 \textbf{COMET}。COMET的超参数设置如表~\ref{tab:hyperparams}所示。三种模态嵌入的提取方式及COMET融合模块、解码器的架构细节见第三章。
 
-\textbf{基线方法}。RQ-KMeans使用faiss库的KMeans实现，每层聚类100次迭代。RQ-VAE和LETTER均使用2层MLP编码器（$4096 \to 1024 \to 64$）和对应的MLP解码器，训练300个周期，学习率$1 \times 10^{-3}$，其余量化配置与COMET一致。LETTER额外使用InfoNCE对比损失引入协同过滤信号，温度参数$\tau = 0.1$。
+\textbf{基线方法}。RQ-KMeans使用faiss库的KMeans实现，每层聚类100次迭代，无需训练。RQ-VAE和LETTER均使用2层MLP编码器（$4096 \to 1024 \to 64$）和对应的MLP解码器，训练300个周期，学习率$1 \times 10^{-3}$，批大小1024。LETTER额外引入InfoNCE对比损失，温度参数$\tau = 0.1$。
 
-\textbf{下游推荐模型}。TIGER和OneRec的模型架构见第三章§3.8。训练方面，TIGER使用Adam优化器，学习率$5 \times 10^{-4}$，训练200个周期，批大小256，从第100个周期开始每10个周期评估一次，早停耐心为2。OneRec使用AdamW优化器（权重衰减0.1），学习率$5 \times 10^{-4}$，配合Warmup余弦衰减调度器，训练30个周期，批大小256。两种模型的束搜索宽度均为20，最大序列长度为50，随机种子为2025。所有实验在8块GPU上使用分布式数据并行（DDP）训练。
+\textbf{下游推荐模型}。TIGER使用Adam优化器，学习率$5 \times 10^{-4}$，训练200个周期。OneRec使用AdamW优化器（权重衰减0.1），学习率$5 \times 10^{-4}$配合Warmup余弦衰减调度器，训练30个周期。两种模型的批大小均为256，束搜索宽度为20，最大序列长度为50，随机种子为2025。
 
 \section{主实验结果}
 

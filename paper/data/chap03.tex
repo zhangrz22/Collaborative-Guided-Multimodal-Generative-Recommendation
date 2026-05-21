@@ -2,42 +2,35 @@
 
 \chapter{基于协同引导的多模态语义ID构建方法}
 
-本章详细介绍本文提出的COMET（Collaborative-guided Multimodal Encoding Tokenizer）方法。首先给出问题定义，然后描述整体框架，接着分别介绍多模态嵌入提取、COMET融合模块、残差向量量化以及训练与碰撞优化策略。
+本章详细介绍本文提出的COMET（Collaborative-guided Multimodal Encoding Tokenizer）方法。首先给出问题定义，然后描述整体框架，接着分别介绍多模态嵌入提取、COMET融合模块、残差向量量化、损失函数设计以及Sinkhorn碰撞优化策略。
 
 \section{问题定义}
 
-\subsection{序列推荐}
-
 设物品集合为$\mathcal{I} = \{i_1, i_2, \ldots, i_N\}$，用户集合为$\mathcal{U} = \{u_1, u_2, \ldots, u_M\}$。每个用户$u$有一个按时间排序的交互序列$\mathcal{S}_u = [s_1, s_2, \ldots, s_T]$，其中$s_t \in \mathcal{I}$。序列推荐的目标是根据$\mathcal{S}_u$预测用户下一个将要交互的物品$s_{T+1}$。
 
-\subsection{语义ID}
-
-语义ID是将每个物品映射为一个$L$层离散编码的表示：
+在生成式推荐框架中，每个物品被映射为一个$L$层离散编码的语义ID：
 \begin{equation}
   \text{SID}(i) = (c_1, c_2, \ldots, c_L), \quad c_l \in \{0, 1, \ldots, K-1\},
 \end{equation}
-其中$L$为编码层数，$K$为每层的码本大小。在本文的实验设置中，$L=4$，$K=256$。语义ID的构建应满足以下性质：（1）语义相似的物品具有相近的编码，（2）不同物品尽量具有不同的编码（低碰撞率），（3）编码层级从粗到细，第一层捕捉物品的大类别，后续层逐步细化。
-
-\subsection{生成式推荐}
+其中$L$为编码层数，$K$为每层的码本大小。在本文的实验设置中，$L=4$，$K=256$。语义ID的构建应满足以下性质：（1）语义相似的物品具有相近的编码，（2）不同物品尽量具有不同的编码，（3）编码层级从粗到细，第一层捕捉物品的大类别，后续层逐步细化。
 
 生成式推荐将序列推荐重新表述为序列到序列的生成任务。给定用户交互历史$\mathcal{S}_u = [s_1, \ldots, s_T]$，将每个物品替换为其语义ID，得到输入序列：
 \begin{equation}
   \mathbf{X} = [\text{SID}(s_1); \text{SID}(s_2); \ldots; \text{SID}(s_T)].
 \end{equation}
-生成模型的目标是自回归地生成目标物品的语义ID：
+生成模型以$\mathbf{X}$为输入，自回归地生成目标物品$s_{T+1}$的语义ID。由于语义ID由$L$层编码组成，生成过程可以分解为逐层预测，即预测下一个物品的概率可以表示为：
 \begin{equation}
   P(s_{T+1} | \mathcal{S}_u) = \prod_{l=1}^{L} P(c_l | \mathbf{X}, c_1, \ldots, c_{l-1}).
 \end{equation}
 
 \section{整体框架}
 
-COMET的整体框架如图~\ref{fig:framework}所示。整个流水线包括以下阶段：
+COMET的整体框架如图~\ref{fig:framework}所示，主要包括以下几个部分：
 
 \begin{enumerate}
   \item \textbf{多模态嵌入提取}：分别使用Qwen3-Embedding-8B、CLIP ViT-L/14和SASRec提取物品的文本嵌入（4096维）、图像嵌入（768维）和协同过滤嵌入（128维）。
   \item \textbf{COMET融合编码}：通过CF-as-Query跨注意力机制将三种模态嵌入融合为64维隐向量。
   \item \textbf{残差向量量化}：将隐向量通过4层残差量化生成离散的4层语义ID。
-  \item \textbf{训练优化}：通过多目标重建损失和量化损失联合训练，使用余弦退火学习率调度，并在训练后期启用Sinkhorn均匀化约束，训练后进行Sinkhorn碰撞优化。
   \item \textbf{下游生成推荐}：将构建的语义ID输入TIGER或OneRec进行生成式推荐。
 \end{enumerate}
 
@@ -73,7 +66,7 @@ Categories: <类别1> > <类别2> > <类别3>
 
 \subsection{协同过滤嵌入}
 
-协同过滤嵌入编码了物品在用户行为空间中的表示，反映了"购买了A的用户也倾向于购买B"这类协同信号。
+协同过滤嵌入编码了物品在用户行为空间中的表示，反映了购买了A的用户也倾向于购买B这类协同信号。
 
 本文使用预训练的SASRec\cite{kang2018self}模型提取协同过滤嵌入。SASRec在用户交互序列上通过交叉熵损失训练，其物品嵌入表$\mathbf{E} \in \mathbb{R}^{N \times d_{\text{cf}}}$中的每一行编码了对应物品的协同过滤信息。本文使用的SASRec模型的隐藏维度$d_{\text{cf}}=128$。
 
@@ -137,36 +130,11 @@ COMET融合的关键设计是将协同过滤嵌入作为注意力查询，文本
 
 \section{残差向量量化}
 
-隐向量$\mathbf{z}$通过4层残差向量量化生成离散的语义ID。量化过程与RQ-VAE相同（见第二章），本节重点介绍COMET保留的辅助技术。
+COMET采用4层残差向量量化将融合后的64维隐向量$\mathbf{z}$映射为离散的语义ID。量化过程与第二章介绍的RQ-VAE相同：第一层对隐向量进行量化，后续各层对前一层的残差进行量化，最终得到4层编码$(c_1, c_2, c_3, c_4)$。
 
-\subsection{指数移动平均码本更新}
+为保证码本的有效利用，COMET采用了以下技术：训练开始前使用KMeans对各层码本进行初始化；训练过程中码本通过指数移动平均方式更新以保持稳定性，并对长期未被使用的码向量进行重启。
 
-码本不通过梯度更新，而是使用指数移动平均（EMA）跟踪被分配到各码向量的输入分布：
-\begin{align}
-  \mathbf{n}^{(t)} &= \gamma \mathbf{n}^{(t-1)} + (1-\gamma) \sum_j \mathbf{1}[k_j = k], \\
-  \mathbf{m}^{(t)} &= \gamma \mathbf{m}^{(t-1)} + (1-\gamma) \sum_j \mathbf{1}[k_j = k] \cdot \mathbf{r}_j,
-\end{align}
-其中$\gamma = 0.99$为衰减因子。码向量更新为$\mathbf{c}_k = \mathbf{m}_k / \tilde{n}_k$，$\tilde{n}_k$经Laplace平滑处理。
-
-\subsection{死码重启}
-
-当某个码向量的EMA计数低于阈值（$\delta=2.0$）时，将其替换为当前批次中的一个随机输入向量，并重置计数。这一机制有效防止了码本中出现长期不被使用的"死码"，维持码本的有效利用率。
-
-\subsection{码本多样性损失}
-
-COMET保留了LETTER提出的码本多样性损失。每个训练周期对各层码本进行KMeans聚类（10个聚类），然后在聚类内部施加对比损失：
-\begin{equation}
-  \mathcal{L}_{\text{div}} = -\frac{1}{|\mathcal{V}|}\sum_{i \in \mathcal{V}} \log \frac{\exp(\text{sim}(\mathbf{x}_{q,i}, \mathbf{c}_{p_i}) / \tau_d)}{\sum_{j \neq k_i} \exp(\text{sim}(\mathbf{x}_{q,i}, \mathbf{c}_j) / \tau_d)},
-\end{equation}
-其中$p_i$为与$k_i$同聚类的随机正样本码向量索引，$\tau_d = 0.1$为温度参数，$\mathcal{V}$为有效样本集合。
-
-\subsection{KMeans码本初始化}
-
-训练开始前，先将所有物品通过COMET融合模块得到隐向量$\mathbf{z}$，然后对第一层码本进行KMeans初始化，再在残差上依次初始化后续层的码本。KMeans迭代100次以确保收敛。
-
-\section{训练策略}
-
-\subsection{损失函数}
+\section{损失函数设计}
 
 COMET的训练损失由重建损失和量化损失组成：
 \begin{equation}
@@ -192,23 +160,13 @@ COMET的训练损失由重建损失和量化损失组成：
 
 多目标重建的设计动机如下：文本嵌入作为维度最高、信息量最丰富的模态，赋予最大的重建权重（1.0），确保隐空间以文本语义为主干。图像和CF的重建权重较低（0.1），起到正则化作用——迫使隐向量$\mathbf{z}$不仅编码文本信息，还需保留一定的视觉和协同过滤信号，从而实现更均衡的多模态融合。相比仅重建文本嵌入，多目标重建在64维隐空间中能更有效地组织多模态信息。
 
-量化损失为4层承诺损失和多样性损失的平均值：
+量化损失用于优化残差向量量化过程：
 \begin{equation}
-  \mathcal{L}_{\text{vq}} = \frac{1}{L} \sum_{l=1}^{L} \left[\beta \|\mathbf{r}^{(l-1)} - \text{sg}[\mathbf{c}_{k^{(l)}}^{(l)}]\|^2 + \gamma \mathcal{L}_{\text{div}}^{(l)}\right],
+  \mathcal{L}_{\text{vq}} = \frac{1}{L} \sum_{l=1}^{L} \|\mathbf{z}_q^{(l)} - \mathbf{z}^{(l)}\|^2,
 \end{equation}
-其中$\beta = 0.25$，$\gamma = 0.0001$。
+其中$\mathbf{z}^{(l)}$为第$l$层的输入向量，$\mathbf{z}_q^{(l)}$为量化后的向量，$L=4$为量化层数。该损失促使输入向量靠近其被分配到的码向量，从而稳定量化过程并提高码本的利用率。
 
-\subsection{优化器与训练细节}
-
-使用AdamW优化器，学习率$1 \times 10^{-3}$，权重衰减$1 \times 10^{-4}$。梯度裁剪阈值为1.0。批大小为1024，训练300个周期。
-
-\textbf{学习率调度}。使用余弦退火调度器（CosineAnnealingLR），学习率从初始值$1 \times 10^{-3}$按余弦函数逐渐衰减至$\eta_{\min} = 1 \times 10^{-5}$（即初始学习率的1\%）。相比固定学习率，余弦调度在训练后期提供更精细的参数更新，有助于模型收敛到更优解。
-
-\textbf{训练时Sinkhorn均匀化}。在训练的最后20\%周期（即第241--300周期），对残差向量量化的码分配启用Sinkhorn均匀化约束，促进码本的均匀利用。这一策略在训练阶段就开始减少碰撞，为训练后的Sinkhorn碰撞优化提供更好的起点。
-
-\textbf{模型选择}。在训练过程中保存加权重建损失$\mathcal{L}_{\text{rec}}$最低的模型检查点，而非使用总训练损失进行模型选择。这是因为量化损失和多样性损失的波动较大，直接使用总损失可能导致选择到重建质量次优的模型。
-
-\textbf{与LETTER的训练对比}。值得注意的是，COMET\textbf{不使用CF对比损失}（InfoNCE）。CF信号在COMET中完全通过跨注意力机制的架构设计融入，不需要额外的对比损失函数及其权重调节。
+在训练过程中，使用加权重建损失$\mathcal{L}_{\text{rec}}$作为模型选择标准，保存该损失最低的模型检查点。这是因为量化损失的波动较大，直接使用总训练损失可能导致选择到重建质量次优的模型。
 
 \section{Sinkhorn碰撞优化}
 
@@ -222,19 +180,6 @@ COMET的训练损失由重建损失和量化损失组成：
 
 与之前仅在最后一层使用统一温度参数的方案不同，COMET采用\textbf{渐进式温度策略}：第3层$\epsilon_3 = 0.005$，第4层$\epsilon_4 = 0.01$。较浅层使用较小的$\epsilon$以保持编码的精确性，较深层使用较大的$\epsilon$以允许更灵活的码分配。在最后两层而非仅最后一层启用Sinkhorn优化，能够在更大的编码空间中进行碰撞消解，显著提高碰撞消除的有效性。
 
-配合训练时Sinkhorn均匀化（见§3.6.2），训练后的碰撞优化需要调整的码分配数量更少，最多进行5轮碰撞优化，目标碰撞率为5\%以下。
-
-\section{下游生成式推荐模型}
-
-COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐模型。本文使用两种代表性模型进行评估。
-
-\subsection{TIGER}
-
-TIGER\cite{rajput2023recommender}基于T5\cite{raffel2020exploring}编码器-解码器架构。用户历史中每个物品的4层语义ID被转化为特殊token（如$\langle s\_a\_3 \rangle$），拼接后作为编码器输入。解码器自回归生成目标物品的4个语义ID token，并使用基于前缀树的约束束搜索确保输出的合法性。本文使用的TIGER配置为：4层编码器、4层解码器、模型维度128、前馈维度1024、6个注意力头、束宽20。
-
-\subsection{OneRec}
-
-OneRec\cite{onerec}采用自定义Transformer架构，使用跨注意力机制将用户历史编码为KV缓存供解码器查询。其架构借鉴大语言模型设计，使用RMSNorm、SiLU门控FFN和更大的模型容量（1024维、12层、16头）。OneRec使用3个独立词汇表（第3和第4位置共享一个词汇表），词汇表大小为8192，配合预裁剪策略（top-1024）加速束搜索。
 
 \section{本章小结}
 
