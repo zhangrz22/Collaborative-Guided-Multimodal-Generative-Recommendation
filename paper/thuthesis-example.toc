@@ -17,10 +17,10 @@
 \contentsline {subsection}{\numberline {3.3.1}文本嵌入}{11}{subsection.3.3.1}%
 \contentsline {subsection}{\numberline {3.3.2}图像嵌入}{12}{subsection.3.3.2}%
 \contentsline {subsection}{\numberline {3.3.3}协同过滤嵌入}{12}{subsection.3.3.3}%
-\contentsline {section}{\numberline {3.4}COMET融合模块}{12}{section.3.4}%
-\contentsline {subsection}{\numberline {3.4.1}模态投影}{12}{subsection.3.4.1}%
-\contentsline {subsection}{\numberline {3.4.2}CF-as-Query跨注意力}{13}{subsection.3.4.2}%
-\contentsline {subsection}{\numberline {3.4.3}融合MLP}{13}{subsection.3.4.3}%
+\contentsline {section}{\numberline {3.4}基于协同引导的多模态融合模块}{12}{section.3.4}%
+\contentsline {subsection}{\numberline {3.4.1}特征对齐投影器}{12}{subsection.3.4.1}%
+\contentsline {subsection}{\numberline {3.4.2}协同引导交叉注意力网络}{13}{subsection.3.4.2}%
+\contentsline {subsection}{\numberline {3.4.3}码本特征映射器}{13}{subsection.3.4.3}%
 \contentsline {section}{\numberline {3.5}残差向量量化}{14}{section.3.5}%
 \contentsline {section}{\numberline {3.6}损失函数设计}{14}{section.3.6}%
 \contentsline {section}{\numberline {3.7}Sinkhorn碰撞优化}{15}{section.3.7}%

@@ -2,7 +2,7 @@
 
 \chapter{基于协同引导的多模态语义ID构建方法}
 
-本章详细介绍本文提出的COMET（Collaborative-guided Multimodal Encoding Tokenizer）方法。首先给出问题定义，然后描述整体框架，接着分别介绍多模态嵌入提取、COMET融合模块、残差向量量化、损失函数设计以及Sinkhorn碰撞优化策略。
+本章详细介绍本文提出的COMET（Collaborative-guided Multimodal Encoding Tokenizer）方法。首先给出问题定义，然后描述整体框架，接着分别介绍多模态嵌入提取、多模态融合模块、残差向量量化、损失函数设计以及Sinkhorn碰撞优化策略。
 
 \section{问题定义}
 
@@ -29,7 +29,7 @@ COMET的整体框架如图~\ref{fig:framework}所示，主要包括以下几个�
 
 \begin{enumerate}
   \item \textbf{多模态嵌入提取}：分别使用Qwen3-Embedding-8B、CLIP ViT-L/14和SASRec提取物品的文本嵌入（4096维）、图像嵌入（768维）和协同过滤嵌入（128维）。
-  \item \textbf{COMET融合编码}：通过CF-as-Query跨注意力机制将三种模态嵌入融合为64维隐向量。
+  \item \textbf{多模态融合模块}：通过协同引导交叉注意力机制将三种模态嵌入融合为64维隐向量。
   \item \textbf{残差向量量化}：将隐向量通过4层残差量化生成离散的4层语义ID。
   \item \textbf{下游生成推荐}：将构建的语义ID输入TIGER或OneRec进行生成式推荐。
 \end{enumerate}
@@ -62,7 +62,7 @@ Categories: <类别1> > <类别2> > <类别3>
 
 图像嵌入补充了物品的视觉外观信息。在电商场景中，商品图片直观展示了颜色、形状、材质等文本难以精确描述的属性，对用户的购买决策具有重要影响。
 
-本文使用CLIP ViT-L/14\cite{radford2021learning}作为图像编码器。CLIP通过在4亿图文对上进行对比学习，其视觉编码器能够提取具有语义理解能力的768维图像表示。对于少量缺失图像的物品（Amazon Beauty数据集中约8个物品），使用零向量作为占位，并在COMET融合模块中通过可学习填充向量处理。
+本文使用CLIP ViT-L/14\cite{radford2021learning}作为图像编码器。CLIP通过在4亿图文对上进行对比学习，其视觉编码器能够提取具有语义理解能力的768维图像表示。对于少量缺失图像的物品（Amazon Beauty数据集中约8个物品），使用零向量作为占位，并在多模态融合模块中通过可学习填充向量处理。
 
 \subsection{协同过滤嵌入}
 
@@ -70,11 +70,11 @@ Categories: <类别1> > <类别2> > <类别3>
 
 本文使用预训练的SASRec\cite{kang2018self}模型提取协同过滤嵌入。SASRec在用户交互序列上通过交叉熵损失训练，其物品嵌入表$\mathbf{E} \in \mathbb{R}^{N \times d_{\text{cf}}}$中的每一行编码了对应物品的协同过滤信息。本文使用的SASRec模型的隐藏维度$d_{\text{cf}}=128$。
 
-\section{COMET融合模块}
+\section{基于协同引导的多模态融合模块}
 
-COMET的核心创新是CF-as-Query跨注意力融合模块（COMETFusion），用于将三种模态的嵌入融合为统一的低维表示。
+COMET的核心创新是协同引导交叉注意力融合模块（COMETFusion），用于将三种模态的嵌入融合为统一的低维表示。
 
-\subsection{模态投影}
+\subsection{特征对齐投影器}
 
 首先，将三种不同维度的模态嵌入投影到统一的注意力操作维度$d_{\text{model}}$（本文设为256）。
 
@@ -85,7 +85,7 @@ COMET的核心创新是CF-as-Query跨注意力融合模块（COMETFusion），�
 \begin{equation}
   \mathbf{h}_{\text{text}}^{(j)} = \mathbf{W}_{\text{text}}^{(j)} \mathbf{e}_{\text{text}}^{(j)} + \mathbf{b}_{\text{text}}^{(j)}, \quad \mathbf{W}_{\text{text}}^{(j)} \in \mathbb{R}^{d_{\text{model}} \times 1024}, \quad j = 1, 2, 3, 4.
 \end{equation}
-这一设计将原始的1个文本KV token扩展为4个token，每个token聚焦于文本嵌入的不同语义子空间，使跨注意力能够更细粒度地选择文本信息。
+这一设计将原始的1个文本KV token扩展为4个token，每个token聚焦于文本嵌入的不同语义子空间，使交叉注意力能够更细粒度地选择文本信息。
 
 图像嵌入和协同过滤嵌入的投影方式不变：
 \begin{align}
@@ -98,7 +98,7 @@ COMET的核心创新是CF-as-Query跨注意力融合模块（COMETFusion），�
   \mathbf{e}_{\text{image}}' = \begin{cases} \mathbf{e}_{\text{image}}, & \text{if image exists,} \\ \mathbf{p}, & \text{otherwise.} \end{cases}
 \end{equation}
 
-\subsection{CF-as-Query跨注意力}
+\subsection{协同引导交叉注意力网络}
 
 COMET融合的关键设计是将协同过滤嵌入作为注意力查询，文本和图像嵌入作为键值对，通过多层Transformer解码器块实现深度融合。
 
@@ -109,24 +109,24 @@ COMET融合的关键设计是将协同过滤嵌入作为注意力查询，文本
   \mathbf{K} = \mathbf{V} = [\mathbf{h}_{\text{text}}^{(1)}; \mathbf{h}_{\text{text}}^{(2)}; \mathbf{h}_{\text{text}}^{(3)}; \mathbf{h}_{\text{text}}^{(4)}; \mathbf{h}_{\text{image}}] \in \mathbb{R}^{5 \times d_{\text{model}}}.
 \end{equation}
 
-\textbf{多层跨注意力}。COMET使用2层堆叠的Transformer解码器块，每层包含跨注意力和前馈网络（FFN）。设第$i$层输入为$\mathbf{q}^{(i)}$（$\mathbf{q}^{(0)} = \mathbf{Q}$），每层的计算如下：
+\textbf{多层交叉注意力}。COMET使用2层堆叠的Transformer解码器块，每层包含交叉注意力和前馈网络（FFN）。设第$i$层输入为$\mathbf{q}^{(i)}$（$\mathbf{q}^{(0)} = \mathbf{Q}$），每层的计算如下：
 \begin{align}
   \mathbf{q}'^{(i)} &= \mathbf{q}^{(i)} + \text{CrossAttn}^{(i)}\bigl(\text{LN}_1^{(i)}(\mathbf{q}^{(i)}),\; \text{LN}_2^{(i)}(\mathbf{KV})\bigr), \label{eq:preln-attn} \\
   \mathbf{q}^{(i+1)} &= \mathbf{q}'^{(i)} + \text{FFN}^{(i)}\bigl(\text{LN}_3^{(i)}(\mathbf{q}'^{(i)})\bigr), \label{eq:preln-ffn}
 \end{align}
-其中$\text{LN}$为层归一化，$\text{FFN}$为两层线性变换（维度$d_{\text{model}} \to 4 d_{\text{model}} \to d_{\text{model}}$）加GELU激活。跨注意力使用$n_{\text{heads}}=4$个头，$d_{\text{head}}=64$。
+其中$\text{LN}$为层归一化，$\text{FFN}$为两层线性变换（维度$d_{\text{model}} \to 2 d_{\text{model}} \to d_{\text{model}}$）加GELU激活。交叉注意力使用$n_{\text{heads}}=4$个头，$d_{\text{head}}=64$。
 
 与单层注意力相比，2层堆叠结构使模型具有更强的模态交互建模能力。第一层可以学习初步的模态选择和信息提取，第二层在此基础上进一步精细融合。每层的残差连接保证了CF信号的直接传递。
 
-最终融合输出$\mathbf{f} = \mathbf{q}^{(2)}$经过最终的层归一化后输入融合MLP。
+最终融合输出$\mathbf{f} = \mathbf{q}^{(2)}$经过最终的层归一化后输入码本特征映射器。
 
-\subsection{融合MLP}
+\subsection{码本特征映射器}
 
 归一化后的特征通过两层感知机映射到码本维度$d_e$：
 \begin{equation}
   \mathbf{z} = \mathbf{W}_2 \cdot \text{GELU}(\mathbf{W}_1 \mathbf{f} + \mathbf{b}_1) + \mathbf{b}_2,
 \end{equation}
-其中$\mathbf{W}_1 \in \mathbb{R}^{128 \times 256}$，$\mathbf{W}_2 \in \mathbb{R}^{64 \times 128}$，最终输出$\mathbf{z} \in \mathbb{R}^{64}$。
+其中$\mathbf{W}_1 \in \mathbb{R}^{256 \times 128}$，$\mathbf{W}_2 \in \mathbb{R}^{128 \times 64}$，最终输出$\mathbf{z} \in \mathbb{R}^{64}$。
 
 \section{残差向量量化}
 
@@ -183,4 +183,4 @@ COMET的训练损失由重建损失和量化损失组成：
 
 \section{本章小结}
 
-本章详细介绍了COMET方法的设计细节。COMET的核心创新在于CF-as-Query跨注意力融合机制，将协同过滤信号从辅助损失的间接引导提升为架构级别的直接融合，同时引入文本多token投影和图像模态信息，构建了5个KV token的丰富键值序列。在训练策略上，COMET采用多目标重建损失（文本+图像+CF）促进多模态信息在隐空间中的均衡编码，使用余弦退火学习率调度和训练时Sinkhorn均匀化进一步提升码本质量。与LETTER相比，COMET通过架构设计实现CF信号的融合，不依赖额外的对比损失函数。
+本章详细介绍了COMET方法的设计细节。COMET的核心创新在于协同引导交叉注意力融合机制，将协同过滤信号从辅助损失的间接引导提升为架构级别的直接融合，同时引入文本多token投影和图像模态信息，构建了5个KV token的丰富键值序列。在训练策略上，COMET采用多目标重建损失（文本+图像+CF）促进多模态信息在隐空间中的均衡编码，使用余弦退火学习率调度和训练时Sinkhorn均匀化进一步提升码本质量。与LETTER相比，COMET通过架构设计实现CF信号的融合，不依赖额外的对比损失函数。
