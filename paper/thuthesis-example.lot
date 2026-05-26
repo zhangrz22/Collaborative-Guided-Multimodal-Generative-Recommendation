@@ -2,7 +2,7 @@
 \contentsline {table}{\numberline {4.2}{\ignorespaces COMET超参数设置}}{17}{table.caption.19}%
 \contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{19}{table.caption.20}%
 \contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{19}{table.caption.21}%
-\contentsline {table}{\numberline {4.5}{\ignorespaces 模态消融实验（OneRec）}}{21}{table.caption.22}%
-\contentsline {table}{\numberline {4.6}{\ignorespaces 不同语义ID方法的碰撞对比}}{22}{table.caption.23}%
+\contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{22}{table.caption.24}%
+\contentsline {table}{\numberline {4.6}{\ignorespaces 不同语义ID方法的碰撞对比}}{24}{table.caption.25}%
 \contentsfinish 
 \contentsfinish 

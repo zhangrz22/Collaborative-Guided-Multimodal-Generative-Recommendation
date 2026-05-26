@@ -33,14 +33,14 @@
 \contentsline {subsection}{\numberline {4.1.4}下游推荐模型}{18}{subsection.4.1.4}%
 \contentsline {subsection}{\numberline {4.1.5}实现细节}{19}{subsection.4.1.5}%
 \contentsline {section}{\numberline {4.2}主实验结果}{19}{section.4.2}%
-\contentsline {section}{\numberline {4.3}消融实验}{20}{section.4.3}%
-\contentsline {section}{\numberline {4.4}语义ID质量分析}{21}{section.4.4}%
-\contentsline {section}{\numberline {4.5}本章小结}{22}{section.4.5}%
-\contentsline {chapter}{\numberline {第5章}总结与展望}{25}{chapter.5}%
-\contentsline {section}{\numberline {5.1}工作总结}{25}{section.5.1}%
-\contentsline {section}{\numberline {5.2}未来展望}{25}{section.5.2}%
-\contentsline {chapter}{参考文献}{26}{section*.25}%
+\contentsline {section}{\numberline {4.3}消融实验}{21}{section.4.3}%
+\contentsline {section}{\numberline {4.4}语义ID质量分析}{23}{section.4.4}%
+\contentsline {section}{\numberline {4.5}本章小结}{24}{section.4.5}%
+\contentsline {chapter}{\numberline {第5章}总结与展望}{26}{chapter.5}%
+\contentsline {section}{\numberline {5.1}工作总结}{26}{section.5.1}%
+\contentsline {section}{\numberline {5.2}未来展望}{26}{section.5.2}%
+\contentsline {chapter}{参考文献}{27}{section*.27}%
 \setcounter {tocdepth}{0}
-\contentsline {chapter}{致谢}{28}{section*.27}%
-\contentsline {chapter}{声明}{29}{section*.29}%
+\contentsline {chapter}{致谢}{29}{section*.29}%
+\contentsline {chapter}{声明}{30}{section*.31}%
 \contentsfinish 

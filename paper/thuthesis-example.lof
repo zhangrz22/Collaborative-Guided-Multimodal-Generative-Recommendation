@@ -2,6 +2,8 @@
 \contentsline {figure}{\numberline {2.2}{\ignorespaces RQ-KMeans架构示意图}}{7}{figure.caption.15}%
 \contentsline {figure}{\numberline {2.3}{\ignorespaces LETTER架构示意图}}{7}{figure.caption.16}%
 \contentsline {figure}{\numberline {3.1}{\ignorespaces COMET整体框架}}{11}{figure.caption.17}%
-\contentsline {figure}{\numberline {4.1}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{23}{figure.caption.24}%
+\contentsline {figure}{\numberline {4.1}{\ignorespaces COMET与RQ-VAE的推荐对比实例1}}{21}{figure.caption.22}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces COMET与RQ-VAE的推荐对比实例2}}{22}{figure.caption.23}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{25}{figure.caption.26}%
 \contentsfinish 
 \contentsfinish 

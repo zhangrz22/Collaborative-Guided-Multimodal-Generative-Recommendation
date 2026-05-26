@@ -327,6 +327,10 @@ INPUT data/chap04.tex
 INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm
 INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi7.tfm
 INPUT /usr/local/texlive/2026/texmf-dist/fonts/tfm/public/cm/cmmi5.tfm
+INPUT ./figures/rec_case1.png
+INPUT ./figures/rec_case1.png
+INPUT ./figures/rec_case2.png
+INPUT ./figures/rec_case2.png
 INPUT ./figures/9055.png
 INPUT ./figures/9055.png
 INPUT ./figures/9056.png
