@@ -331,6 +331,8 @@ INPUT ./figures/rec_case1.png
 INPUT ./figures/rec_case1.png
 INPUT ./figures/rec_case2.png
 INPUT ./figures/rec_case2.png
+INPUT ./figures/longtail_distribution.png
+INPUT ./figures/longtail_distribution.png
 INPUT ./figures/9055.png
 INPUT ./figures/9055.png
 INPUT ./figures/9056.png
