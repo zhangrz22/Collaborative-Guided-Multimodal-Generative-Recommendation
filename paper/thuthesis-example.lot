@@ -3,7 +3,7 @@
 \contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{19}{table.caption.20}%
 \contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{19}{table.caption.21}%
 \contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{22}{table.caption.24}%
-\contentsline {table}{\numberline {4.6}{\ignorespaces 长尾物品推荐性能对比（OneRec）}}{23}{table.caption.26}%
+\contentsline {table}{\numberline {4.6}{\ignorespaces 热门物品与长尾物品推荐性能对比（OneRec）}}{23}{table.caption.26}%
 \contentsline {table}{\numberline {4.7}{\ignorespaces 不同语义ID方法的碰撞对比}}{25}{table.caption.27}%
 \contentsfinish 
 \contentsfinish 

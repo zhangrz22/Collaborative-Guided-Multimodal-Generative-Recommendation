@@ -230,23 +230,26 @@ COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐�
   \label{fig:longtail-dist}
 \end{figure}
 
-表~\ref{tab:longtail}展示了COMET和RQ-VAE在OneRec模型上对长尾物品的推荐性能对比。
+表~\ref{tab:longtail}展示了COMET和RQ-VAE在OneRec模型上对热门物品和长尾物品的推荐性能对比。
 
 \begin{table}[htbp]
   \centering
-  \caption{长尾物品推荐性能对比（OneRec）}
+  \caption{热门物品与长尾物品推荐性能对比（OneRec）}
   \label{tab:longtail}
-  \begin{tabular}{lcccc}
+  \begin{tabular}{llcccc}
     \toprule
-    方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
+    物品类型 & 方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
     \midrule
-    RQ-VAE & 0.0175 & 0.0226 & 0.0133 & 0.0144 \\
-    \textbf{COMET} & \textbf{0.0184} & \textbf{0.0248} & \textbf{0.0140} & \textbf{0.0161} \\
+    \multirow{2}{*}{热门物品} & RQ-VAE & 0.0654 & 0.1034 & 0.0433 & 0.0561 \\
+    & \textbf{COMET} & \textbf{0.0701} & \textbf{0.1097} & \textbf{0.0449} & \textbf{0.0575} \\
+    \midrule
+    \multirow{2}{*}{长尾物品} & RQ-VAE & 0.0175 & 0.0226 & 0.0133 & 0.0144 \\
+    & \textbf{COMET} & \textbf{0.0184} & \textbf{0.0248} & \textbf{0.0140} & \textbf{0.0161} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-从实验结果可以看出，COMET在长尾物品推荐上全面优于RQ-VAE。具体而言，COMET的Recall@10达到0.0248，相比RQ-VAE的0.0226提升了9.7\%，而在完整数据集上COMET相比RQ-VAE的提升仅为6.9\%，说明COMET在长尾物品上的性能增益更为显著。这一结果表明，COMET构建的语义ID对长尾物品具有更强的表达能力。
+从实验结果可以看出，COMET在热门物品和长尾物品上均全面优于RQ-VAE，但在长尾物品上的性能增益更为显著。具体而言，在热门物品上，COMET的Recall@10达到0.1097，相比RQ-VAE的0.1034提升了6.1\%；而在长尾物品上，COMET的Recall@10达到0.0248，相比RQ-VAE的0.0226提升了9.7\%，显著高于热门物品的提升幅度。对比完整数据集上6.9\%的整体提升，长尾物品上的性能增益尤为突出。这一结果表明，COMET构建的语义ID对交互数据稀疏的长尾物品具有更强的表达能力。
 
 COMET在长尾物品上的优势主要来源于以下两方面：
 
@@ -345,4 +348,5 @@ COMET在所有方法中碰撞率最低，仅为1.45\%，碰撞物品占比仅2.6
 
 \section{本章小结}
 
-本章通过全面的实验评估验证了COMET方法的有效性。主实验结果表明，COMET构建的语义ID在TIGER和OneRec两种生成式推荐模型上均取得了最优的推荐性能，超越了RQ-KMeans、RQ-VAE和LETTER等基线方法。消融实验表明，图像模态和CF信号对语义ID质量均有显著贡献，且二者之间存在互补效应，同时去除两者导致NDCG@10下降5.6\%。语义ID质量分析表明，COMET的碰撞率仅为1.45\%，远低于RQ-KMeans的8.48\%、RQ-VAE的2.45\%和LETTER的2.26\%，有效缓解了因语义ID碰撞导致的推荐精度损失。
+本章通过全面的实验评估验证了COMET方法的有效性。主实验结果表明，COMET构建的语义ID在TIGER和OneRec两种生成式推荐模型上均取得了最优的推荐性能，超越了RQ-KMeans、RQ-VAE和LETTER等基线方法。消融实验表明，图像模态和CF引导机制对语义ID质量均有显著贡献，且二者之间存在互补效应。长尾物品分析表明，COMET在长尾物品上的性能增益显著高于完整数据集，验证了多模态融合和CF引导机制对交互稀疏物品的有效性。语义ID质量分析表明，COMET的碰撞率在所有方法中最低，有效缓解了因语义ID碰撞导致的推荐精度损失。
+
