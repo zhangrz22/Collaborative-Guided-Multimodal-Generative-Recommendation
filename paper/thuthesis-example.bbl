@@ -102,8 +102,9 @@ Proceedings of the ACM Conference on Recommender Systems (RecSys).
   Zheng]{onerec}
 ZHANG Z, SUN Z, XIN X, et~al.
 \newblock {OneRec}: Unifying retrieve and rank with generative recommender and
-  iterative preference alignment\allowbreak[A].
+  iterative preference alignment\allowbreak[A/OL].
 \newblock 2025.
+\newblock \url{https://arxiv.org/abs/2502.18965}.
 
 \bibitem[Zhang et~al.(2019)Zhang and Sennrich]{zhang2019root}
 ZHANG B, SENNRICH R.
@@ -113,16 +114,9 @@ Advances in Neural Information Processing Systems (NeurIPS).
 
 \bibitem[Shazeer(2020)]{shazeer2020glu}
 SHAZEER N.
-\newblock {GLU} variants improve transformer\allowbreak[A].
+\newblock {GLU} variants improve transformer\allowbreak[A/OL].
 \newblock 2020.
-
-\bibitem[Wang et~al.(2024)Wang, Chen, Zhao, Cao, Tao, Li, and
-  Liu]{wang2024lcrec}
-WANG Y, CHEN L, ZHAO J, et~al.
-\newblock {LC-Rec}: Semantics-guided generative retrieval for sequential
-  recommendation\allowbreak[C]//\allowbreak
-Proceedings of the European Conference on Information Retrieval (ECIR).
-\newblock 2024.
+\newblock \url{https://arxiv.org/abs/2002.05202}.
 
 \bibitem[Radford et~al.(2021)Radford, Kim, Hallacy, Ramesh, Goh, Agarwal,
   Sastry, Askell, Mishkin, Clark, et~al.]{radford2021learning}
@@ -132,25 +126,27 @@ RADFORD A, KIM J~W, HALLACY C, et~al.
 Proceedings of the International Conference on Machine Learning (ICML).
 \newblock 2021: 8748-8763.
 
-\bibitem[Mai et~al.(2025)Mai, Zhao, Zhao, Jiang, and Wen]{mai2025multimodal}
-MAI Z~F, ZHAO Z~K, ZHAO X, et~al.
+\bibitem[Zhai et~al.(2025)Zhai, Mai, and Wang]{mai2025multimodal}
+ZHAI J, MAI Z~F, WANG C~D.
 \newblock Multimodal quantitative language for generative
   recommendation\allowbreak[C]//\allowbreak
-Proceedings of the ACM Web Conference (WWW).
+International Conference on Learning Representations (ICLR).
 \newblock 2025.
 
 \bibitem[Zhao et~al.(2024)Zhao, Mai, Jiang, and Wen]{qbert4rec2024}
 ZHAO X, MAI Z~F, JIANG J~C, et~al.
 \newblock Quantized semantic-{ID} representation learning for multimodal
-  recommendation\allowbreak[A].
+  recommendation\allowbreak[A/OL].
 \newblock 2024.
+\newblock \url{https://arxiv.org/abs/2512.02474}.
 
 \bibitem[Wang et~al.(2025)Wang, Zhang, Wu, Yin, Hu, He, Mao, Hou, Gu, Yan,
   Zhang, and Lin]{qwen3embedding}
 WANG B, ZHANG J, WU B, et~al.
 \newblock Qwen3-embedding: Advancing text embedding and reranking through
-  foundation models\allowbreak[A].
+  foundation models\allowbreak[A/OL].
 \newblock 2025.
+\newblock \url{https://arxiv.org/abs/2506.05176}.
 
 \bibitem[Cuturi(2013)]{cuturi2013sinkhorn}
 CUTURI M.
@@ -167,5 +163,13 @@ MCAULEY J, TARGETT C, SHI Q, et~al.
 Proceedings of the International ACM SIGIR Conference on Research and
   Development in Information Retrieval (SIGIR).
 \newblock 2015: 43-52.
+
+\bibitem[Wang et~al.(2024)Wang, Chen, Zhao, Cao, Tao, Li, and
+  Liu]{wang2024lcrec}
+WANG Y, CHEN L, ZHAO J, et~al.
+\newblock {LC-Rec}: Semantics-guided generative retrieval for sequential
+  recommendation\allowbreak[C]//\allowbreak
+Proceedings of the European Conference on Information Retrieval (ECIR).
+\newblock 2024.
 
 \end{thebibliography}

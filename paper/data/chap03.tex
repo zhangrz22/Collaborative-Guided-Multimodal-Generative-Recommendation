@@ -8,11 +8,11 @@
 
 设物品集合为$\mathcal{I} = \{i_1, i_2, \ldots, i_N\}$，用户集合为$\mathcal{U} = \{u_1, u_2, \ldots, u_M\}$。每个用户$u$有一个按时间排序的交互序列$\mathcal{S}_u = [s_1, s_2, \ldots, s_T]$，其中$s_t \in \mathcal{I}$。序列推荐的目标是根据$\mathcal{S}_u$预测用户下一个将要交互的物品$s_{T+1}$。
 
-在生成式推荐框架中，每个物品被映射为一个$L$层离散编码的语义ID：
+在生成式推荐框架中，每个物品被映射为一个多层离散编码的语义ID：
 \begin{equation}
   \text{SID}(i) = (c_1, c_2, \ldots, c_L), \quad c_l \in \{0, 1, \ldots, K-1\},
 \end{equation}
-其中$L$为编码层数，$K$为每层的码本大小。在本文的实验设置中，$L=4$，$K=256$。语义ID的构建应满足以下性质：（1）语义相似的物品具有相近的编码，（2）不同物品尽量具有不同的编码，（3）编码层级从粗到细，第一层捕捉物品的大类别，后续层逐步细化。
+其中$L$为码本层数，$K$为每层的码本大小。在本文的实验设置中，$L=4$，$K=256$。语义ID的构建应满足以下性质：（1）语义相似的物品具有相近的编码，（2）不同物品尽量具有不同的编码，（3）编码层级从粗到细，第一层捕捉物品的大类别，后续层逐步细化。
 
 生成式推荐将序列推荐重新表述为序列到序列的生成任务。给定用户交互历史$\mathcal{S}_u = [s_1, \ldots, s_T]$，将每个物品替换为其语义ID，得到输入序列：
 \begin{equation}
@@ -95,7 +95,7 @@ COMET的核心创新是协同引导交叉注意力融合模块（COMETFusion）�
 
 对于缺失图像的物品，使用可学习的填充向量$\mathbf{p} \in \mathbb{R}^{768}$替代零向量：
 \begin{equation}
-  \mathbf{e}_{\text{image}}' = \begin{cases} \mathbf{e}_{\text{image}}, & \text{if image exists,} \\ \mathbf{p}, & \text{otherwise.} \end{cases}
+  \mathbf{e}_{\text{image}}' = \begin{cases} \mathbf{e}_{\text{image}}, & \text{若图像存在,} \\ \mathbf{p}, & \text{否则.} \end{cases}
 \end{equation}
 
 \subsection{协同引导交叉注意力网络}
@@ -130,13 +130,15 @@ COMET融合的关键设计是将协同过滤嵌入作为注意力查询，文本
 
 \section{残差向量量化}
 
-COMET采用4层残差向量量化将融合后的64维隐向量$\mathbf{z}$映射为离散的语义ID。量化过程与第二章介绍的RQ-VAE相同：第一层对隐向量进行量化，后续各层对前一层的残差进行量化，最终得到4层编码$(c_1, c_2, c_3, c_4)$。
+COMET采用4层残差向量量化将融合后的64维隐向量$\mathbf{z}$映射为离散的语义ID。量化过程与第2章介绍的RQ-VAE相同：第一层对隐向量进行量化，后续各层对前一层的残差进行量化，最终得到4层编码$(c_1, c_2, c_3, c_4)$。
+
+由于向量量化操作不可微，训练时采用直通估计器技术：前向传播使用离散的量化向量$\hat{\mathbf{z}}$，反向传播时梯度直接穿过量化操作传递给编码器。这使得编码器能够通过重建损失进行端到端优化。
 
 为保证码本的有效利用，COMET采用了以下技术：训练开始前使用KMeans对各层码本进行初始化；训练过程中码本通过指数移动平均方式更新以保持稳定性，并对长期未被使用的码向量进行重启。
 
 \section{损失函数设计}
 
-COMET的训练损失由重建损失和量化损失组成：
+COMET的训练损失由重建损失$\mathcal{L}_{\text{rec}}$和量化损失$\mathcal{L}_{\text{vq}}$组成：
 \begin{equation}
   \mathcal{L} = \mathcal{L}_{\text{rec}} + \lambda \mathcal{L}_{\text{vq}},
   \label{eq:loss}
@@ -150,13 +152,13 @@ COMET的训练损失由重建损失和量化损失组成：
   \item \textbf{图像解码器}：2层MLP（$64 \to 256 \to 768$），重建原始图像嵌入；
   \item \textbf{CF解码器}：2层MLP（$64 \to 128 \to 128$），重建原始协同过滤嵌入。
 \end{itemize}
-中间层使用ReLU激活。
+中间层使用ReLU激活。设$\text{Dec}_{\text{text}}(\cdot)$、$\text{Dec}_{\text{image}}(\cdot)$和$\text{Dec}_{\text{cf}}(\cdot)$分别表示文本、图像和协同过滤解码器函数。
 
-重建损失为三个分支的加权均方误差之和：
+重建损失为文本、图像和协同过滤三个分支的加权均方误差之和：
 \begin{equation}
   \mathcal{L}_{\text{rec}} = w_{\text{text}} \|\text{Dec}_{\text{text}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{text}}\|^2 + w_{\text{image}} \|\text{Dec}_{\text{image}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{image}}\|^2 + w_{\text{cf}} \|\text{Dec}_{\text{cf}}(\hat{\mathbf{z}}) - \mathbf{e}_{\text{cf}}\|^2,
 \end{equation}
-其中$\hat{\mathbf{z}}$为经直通估计器（straight-through estimator）处理后的量化表示，$w_{\text{text}} = 1.0$，$w_{\text{image}} = 0.1$，$w_{\text{cf}} = 0.1$。对于缺失图像的物品，图像重建损失项被掩码（mask）为零，不参与梯度计算。
+其中$\hat{\mathbf{z}}$为经直通估计器处理后的量化表示，$w_{\text{text}} = 1.0$，$w_{\text{image}} = 0.1$，$w_{\text{cf}} = 0.1$。对于缺失图像的物品，图像重建损失项被掩码为零，不参与梯度计算。
 
 多目标重建的设计动机如下：文本嵌入作为维度最高、信息量最丰富的模态，赋予最大的重建权重（1.0），确保隐空间以文本语义为主干。图像和CF的重建权重较低（0.1），起到正则化作用——迫使隐向量$\mathbf{z}$不仅编码文本信息，还需保留一定的视觉和协同过滤信号，从而实现更均衡的多模态融合。相比仅重建文本嵌入，多目标重建在64维隐空间中能更有效地组织多模态信息。
 
@@ -164,7 +166,7 @@ COMET的训练损失由重建损失和量化损失组成：
 \begin{equation}
   \mathcal{L}_{\text{vq}} = \frac{1}{L} \sum_{l=1}^{L} \|\mathbf{z}_q^{(l)} - \mathbf{z}^{(l)}\|^2,
 \end{equation}
-其中$\mathbf{z}^{(l)}$为第$l$层的输入向量，$\mathbf{z}_q^{(l)}$为量化后的向量，$L=4$为量化层数。该损失促使输入向量靠近其被分配到的码向量，从而稳定量化过程并提高码本的利用率。
+其中$\mathbf{z}^{(l)}$为第$l$层的输入向量，$\mathbf{z}_q^{(l)}$为量化后的向量。该损失促使输入向量靠近其被分配到的码向量，从而稳定量化过程并提高码本的利用率。
 
 在训练过程中，使用加权重建损失$\mathcal{L}_{\text{rec}}$作为模型选择标准，保存该损失最低的模型检查点。这是因为量化损失的波动较大，直接使用总训练损失可能导致选择到重建质量次优的模型。
 

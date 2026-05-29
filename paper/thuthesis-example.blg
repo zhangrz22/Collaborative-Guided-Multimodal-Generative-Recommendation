@@ -18,42 +18,42 @@ Reallocated singl_function (elt_size=4) to 100 items from 50.
 Database file #1: ref/refs.bib
 You've used 21 entries,
             5428 wiz_defined-function locations,
-            1153 strings with 12785 characters,
-and the built_in function-call counts, 206536 in all, are:
-= -- 3495
-> -- 24863
-< -- 30705
-+ -- 8278
-- -- 1543
-* -- 1030
-:= -- 28485
-add.period$ -- 63
+            1157 strings with 12899 characters,
+and the built_in function-call counts, 205357 in all, are:
+= -- 3493
+> -- 24705
+< -- 30518
++ -- 8226
+- -- 1528
+* -- 1035
+:= -- 28326
+add.period$ -- 67
 call.type$ -- 21
-change.case$ -- 174
-chr.to.int$ -- 7588
+change.case$ -- 173
+chr.to.int$ -- 7542
 cite$ -- 21
-duplicate$ -- 468
-empty$ -- 1454
-format.name$ -- 791
-if$ -- 53895
+duplicate$ -- 472
+empty$ -- 1450
+format.name$ -- 784
+if$ -- 53587
 int.to.chr$ -- 1
 int.to.str$ -- 22
 missing$ -- 0
-newline$ -- 135
+newline$ -- 139
 num.names$ -- 63
-pop$ -- 10834
+pop$ -- 10813
 preamble$ -- 1
 purify$ -- 26
 quote$ -- 0
-skip$ -- 21995
+skip$ -- 21810
 stack$ -- 0
-substring$ -- 9088
+substring$ -- 9035
 swap$ -- 21
-text.length$ -- 475
+text.length$ -- 472
 text.prefix$ -- 0
 top$ -- 0
 type$ -- 231
 warning$ -- 0
-while$ -- 497
+while$ -- 494
 width$ -- 0
-write$ -- 273
+write$ -- 281
