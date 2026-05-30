@@ -16,13 +16,13 @@ SASRec\cite{kang2018self}是序列推荐领域的里程碑工作，它将自注�
 
 \section{生成式推荐}
 
-生成式推荐将推荐问题重新表述为序列生成任务，其灵感源自信息检索领域的可微搜索索引（Differentiable Search Index, DSI）\cite{tay2022transformer}。DSI的核心思想是训练一个Transformer模型直接将查询映射为文档标识符，无需传统的索引-检索两阶段流程。生成式推荐将这一思想迁移到推荐场景：将物品映射为离散的语义ID，训练生成模型根据用户历史自回归地生成目标物品的语义ID。
+生成式推荐将推荐问题重新表述为序列生成任务。其核心思想是：首先为每个物品分配一个由多层离散编码组成的语义ID，然后训练生成模型根据用户历史交互物品的语义ID序列，自回归地生成下一个物品的语义ID。
 
 TIGER\cite{rajput2023recommender}是生成式推荐的代表性工作。它使用RQ-VAE将物品的文本嵌入量化为多层语义ID，然后基于T5\cite{raffel2020exploring}编码器-解码器架构，将用户历史中所有物品的语义ID拼接为输入序列，自回归地生成目标物品的4层语义ID。TIGER还提出了基于前缀树（Trie）的约束束搜索，确保生成的语义ID序列一定对应某个真实物品，有效避免了无效生成。
 
-P5\cite{geng2022recommendation}从另一个角度探索生成式推荐，将多种推荐任务（评分预测、序列推荐、解释生成等）统一为自然语言生成任务，使用单一的T5模型处理。LC-Rec\cite{zheng2024adapting}在此基础上提出了LETTER语义ID构建方法和对齐-生成两阶段训练范式。
+P5\cite{geng2022recommendation}从另一个角度探索生成式推荐，将多种推荐任务（评分预测、序列推荐、解释生成等）统一为自然语言生成任务，使用单一的T5模型处理。LC-Rec\cite{zheng2024adapting}提出了对齐-生成两阶段训练范式，通过协同语义对齐提升大语言模型在推荐任务上的表现。LETTER\cite{wang2024learnable}则专注于可学习的物品标记化方法，通过引入协同过滤信号改进语义ID的构建质量。
 
-OneRec\cite{onerec}是另一种代表性的生成式推荐模型，采用了不同于T5的自定义Transformer架构。OneRec使用交叉注意力机制将用户历史编码为键值（Key-Value）缓存，解码器通过交叉注意力查询历史上下文并自回归生成目标语义ID。其架构借鉴了大语言模型的设计，使用RMSNorm\cite{zhang2019root}、SiLU门控前馈网络\cite{shazeer2020glu}和更大的模型容量（1024维、12层）。OneRec还提出了预裁剪（Precut）策略加速束搜索，在每一步先筛选概率最高的候选token再进行束扩展。
+OneRec\cite{onerec}是另一种代表性的生成式推荐模型，采用了不同于T5的自定义Transformer架构。OneRec使用交叉注意力机制将用户历史编码为键值（Key-Value）缓存，解码器通过交叉注意力查询历史上下文并自回归生成目标语义ID。其架构借鉴了大语言模型的设计，使用RMSNorm\cite{zhang2019root}、SiLU门控前馈网络\cite{shazeer2020glu}和更大的模型容量（1024维、12层）。
 
 生成式推荐的性能很大程度上取决于语义ID的质量。如果语义ID不能有效编码物品特征，生成模型即使结构再先进也难以学习到有效的推荐模式。因此，本文聚焦于语义ID构建方法的改进。
 
@@ -41,7 +41,7 @@ OneRec\cite{onerec}是另一种代表性的生成式推荐模型，采用了不�
   \label{fig:rq-vae}
 \end{figure}
 
-编码器将物品的高维嵌入（如4096维的文本嵌入）通过多层感知机映射到低维隐向量$\mathbf{z} \in \mathbb{R}^{d}$（如$d=32$）。残差向量量化器包含$L$层（通常$L=4$），每层维护一个码本$\mathbf{C}^{(l)} = \{\mathbf{c}_1^{(l)}, \ldots, \mathbf{c}_K^{(l)}\} \subset \mathbb{R}^{d}$（$K$通常为256）。量化过程按层级进行：
+编码器将物品的高维嵌入（如4096维的文本嵌入）通过多层感知机映射到低维隐向量$\mathbf{z} \in \mathbb{R}^{d}$（如$d=32$）。残差向量量化器包含$L$层，每层维护一个码本$\mathbf{C}^{(l)} = \{\mathbf{c}_1^{(l)}, \ldots, \mathbf{c}_K^{(l)}\} \subset \mathbb{R}^{d}$（$K$通常为256）。量化过程按层级进行：
 \begin{align}
   \mathbf{r}^{(0)} &= \mathbf{z}, \\
   k^{(l)} &= \arg\min_{k} \|\mathbf{r}^{(l-1)} - \mathbf{c}_k^{(l)}\|^2, \quad l = 1, \ldots, L, \\
@@ -49,7 +49,7 @@ OneRec\cite{onerec}是另一种代表性的生成式推荐模型，采用了不�
 \end{align}
 其中$\mathbf{r}^{(l)}$为第$l$层的残差，$k^{(l)}$为第$l$层分配的编码索引。物品的语义ID即为$(k^{(1)}, k^{(2)}, \ldots, k^{(L)})$。
 
-解码器将量化后的表示$\hat{\mathbf{z}} = \sum_{l=1}^{L} \mathbf{c}_{k^{(l)}}^{(l)}$重建为原始嵌入。训练损失为重建损失与承诺损失（commitment loss）之和：
+解码器将量化后的表示$\hat{\mathbf{z}} = \sum_{l=1}^{L} \mathbf{c}_{k^{(l)}}^{(l)}$重建为原始嵌入。训练损失为重建损失与承诺损失之和：
 \begin{equation}
   \mathcal{L}_{\text{RQ-VAE}} = \|\mathbf{x}_{\text{rec}} - \mathbf{x}\|^2 + \beta \sum_{l=1}^{L} \|\mathbf{r}^{(l-1)} - \text{sg}[\mathbf{c}_{k^{(l)}}^{(l)}]\|^2,
 \end{equation}
@@ -74,12 +74,12 @@ RQ-KMeans的优势在于方法简单、无需训练、稳定性高，但其局�
 
 \subsection{LETTER}
 
-LETTER\cite{zheng2024adapting}在RQ-VAE的基础上做了两项重要改进：
+LETTER\cite{wang2024learnable}在RQ-VAE的基础上做了两项重要改进：
 
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=0.8\textwidth]{LETTER.png}
-  \caption{LETTER架构示意图\cite{zheng2024adapting}}
+  \caption{LETTER架构示意图\cite{wang2024learnable}}
   \label{fig:letter}
 \end{figure}
 

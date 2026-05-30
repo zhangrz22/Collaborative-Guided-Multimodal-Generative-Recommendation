@@ -8,7 +8,7 @@
 
 \subsection{数据集}
 
-本文在Amazon Beauty数据集\cite{mcauley2015image}上进行实验。该数据集包含美妆类商品的用户交互记录。与已有工作\cite{rajput2023recommender,wang2024lcrec}一致，对数据进行5-core过滤（丢弃交互次数少于5次的用户和物品）。数据集的基本统计信息如表~\ref{tab:dataset}所示。
+本文在Amazon Beauty数据集\cite{mcauley2015image}上进行实验。该数据集包含美妆类商品的用户交互记录。与已有工作\cite{rajput2023recommender,zheng2024adapting}一致，对数据进行5-core过滤（丢弃交互次数少于5次的用户和物品）。数据集的基本统计信息如表~\ref{tab:dataset}所示。
 
 \begin{table}[htbp]
   \centering
@@ -85,7 +85,7 @@
 \begin{itemize}
   \item \textbf{RQ-KMeans}\cite{onerec}：使用faiss KMeans直接在原始4096维文本嵌入上进行4层残差聚类，无学习组件。
   \item \textbf{RQ-VAE}\cite{lee2022autoregressive}：使用MLP编码器将文本嵌入映射到64维隐空间，经4层残差向量量化和MLP解码器重建。
-  \item \textbf{LETTER}\cite{zheng2024adapting}：在RQ-VAE基础上引入协同过滤信号。使用预训练的SASRec模型提取物品的协同过滤嵌入，通过InfoNCE对比损失要求量化后的隐向量与协同过滤嵌入在表示空间中对齐，从而将用户行为模式融入语义ID构建过程。
+  \item \textbf{LETTER}\cite{wang2024learnable}：在RQ-VAE基础上引入协同过滤信号。使用预训练的SASRec模型提取物品的协同过滤嵌入，通过InfoNCE对比损失要求量化后的隐向量与协同过滤嵌入在表示空间中对齐，从而将用户行为模式融入语义ID构建过程。
   \item \textbf{COMET}（本文方法）：使用协同引导交叉注意力融合文本、图像和CF嵌入，配合文本多token投影和多目标重建。
 \end{itemize}
 
@@ -119,9 +119,9 @@ COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐�
     \toprule
     方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
     \midrule
-    RQ-KMeans[Ju2025] & 0.0372 & 0.0604 & 0.0240 & 0.0314 \\
-    RQ-VAE[Rajput2023] & 0.0384 & 0.0585 & 0.0243 & 0.0308 \\
-    LETTER[Wang2024] & 0.0389 & 0.0607 & 0.0248 & 0.0317 \\
+    RQ-KMeans\cite{onerec} & 0.0372 & 0.0604 & 0.0240 & 0.0314 \\
+    RQ-VAE\cite{lee2022autoregressive} & 0.0384 & 0.0585 & 0.0243 & 0.0308 \\
+    LETTER\cite{wang2024learnable} & 0.0389 & 0.0607 & 0.0248 & 0.0317 \\
     \textbf{COMET} & \textbf{0.0393} & \textbf{0.0627} & \textbf{0.0254} & \textbf{0.0330} \\
     \bottomrule
   \end{tabular}
@@ -136,9 +136,9 @@ COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐�
     \toprule
     方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
     \midrule
-    RQ-KMeans[Ju2025] & 0.0396 & 0.0616 & \textbf{0.0276} & \textbf{0.0346} \\
-    RQ-VAE[Rajput2023] & 0.0384 & 0.0579 & 0.0264 & 0.0326 \\
-    LETTER[Wang2024] & 0.0391 & 0.0587 & 0.0263 & 0.0326 \\
+    RQ-KMeans\cite{onerec} & 0.0396 & 0.0616 & \textbf{0.0276} & \textbf{0.0346} \\
+    RQ-VAE\cite{lee2022autoregressive} & 0.0384 & 0.0579 & 0.0264 & 0.0326 \\
+    LETTER\cite{wang2024learnable} & 0.0391 & 0.0587 & 0.0263 & 0.0326 \\
     \textbf{COMET} & \textbf{0.0410} & \textbf{0.0619} & 0.0275 & 0.0342 \\
     \bottomrule
   \end{tabular}
@@ -231,10 +231,10 @@ COMET构建的语义ID可以直接输入任何基于语义ID的生成式推荐�
     \toprule
     物品类型 & 方法 & Recall@5 & Recall@10 & NDCG@5 & NDCG@10 \\
     \midrule
-    \multirow{2}{*}{热门物品} & RQ-VAE & 0.0654 & 0.1034 & 0.0433 & 0.0561 \\
+    \multirow{2}{*}{热门物品} & RQ-VAE\cite{lee2022autoregressive} & 0.0654 & 0.1034 & 0.0433 & 0.0561 \\
     & \textbf{COMET} & \textbf{0.0701} & \textbf{0.1097} & \textbf{0.0449} & \textbf{0.0575} \\
     \midrule
-    \multirow{2}{*}{长尾物品} & RQ-VAE & 0.0175 & 0.0226 & 0.0133 & 0.0144 \\
+    \multirow{2}{*}{长尾物品} & RQ-VAE\cite{lee2022autoregressive} & 0.0175 & 0.0226 & 0.0133 & 0.0144 \\
     & \textbf{COMET} & \textbf{0.0184} & \textbf{0.0248} & \textbf{0.0140} & \textbf{0.0161} \\
     \bottomrule
   \end{tabular}
@@ -271,9 +271,9 @@ COMET在长尾物品上的优势主要来源于以下两方面：
     \toprule
     方法 & 碰撞率 & 碰撞物品占比 \\
     \midrule
-    RQ-KMeans[Ju2025] & 8.48\% & 14.23\% \\
-    RQ-VAE[Rajput2023] & 2.45\% & 4.48\% \\
-    LETTER[Wang2024] & 2.26\% & 3.89\% \\
+    RQ-KMeans\cite{onerec} & 8.48\% & 14.23\% \\
+    RQ-VAE\cite{lee2022autoregressive} & 2.45\% & 4.48\% \\
+    LETTER\cite{wang2024learnable} & 2.26\% & 3.89\% \\
     \textbf{COMET} & \textbf{1.45\%} & \textbf{2.65\%} \\
     \bottomrule
   \end{tabular}
