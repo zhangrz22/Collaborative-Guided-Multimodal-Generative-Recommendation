@@ -327,6 +327,8 @@ INPUT ./data/chap04.tex
 INPUT ./data/chap04.tex
 INPUT ./data/chap04.tex
 INPUT data/chap04.tex
+INPUT ./figures/rec_sample.png
+INPUT ./figures/rec_sample.png
 INPUT ./figures/rec_case1.png
 INPUT ./figures/rec_case1.png
 INPUT ./figures/rec_case2.png
