@@ -1,11 +1,11 @@
 \contentsline {figure}{\numberline {2.1}{\ignorespaces RQ-VAE架构示意图\cite {lee2022autoregressive}}}{5}{figure.caption.14}%
 \contentsline {figure}{\numberline {2.2}{\ignorespaces RQ-KMeans架构示意图\cite {onerec}}}{7}{figure.caption.15}%
 \contentsline {figure}{\numberline {2.3}{\ignorespaces LETTER架构示意图\cite {wang2024learnable}}}{7}{figure.caption.16}%
-\contentsline {figure}{\numberline {3.1}{\ignorespaces COMET整体框架}}{11}{figure.caption.17}%
-\contentsline {figure}{\numberline {4.1}{\ignorespaces 推荐系统实例}}{21}{figure.caption.22}%
-\contentsline {figure}{\numberline {4.2}{\ignorespaces COMET与RQ-VAE的推荐对比实例1}}{22}{figure.caption.23}%
-\contentsline {figure}{\numberline {4.3}{\ignorespaces COMET与RQ-VAE的推荐对比实例2}}{23}{figure.caption.24}%
-\contentsline {figure}{\numberline {4.4}{\ignorespaces 长尾物品分布}}{25}{figure.caption.26}%
-\contentsline {figure}{\numberline {4.5}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{27}{figure.caption.29}%
+\contentsline {figure}{\numberline {3.1}{\ignorespaces COMET整体框架}}{12}{figure.caption.17}%
+\contentsline {figure}{\numberline {4.1}{\ignorespaces 推荐系统实例}}{24}{figure.caption.22}%
+\contentsline {figure}{\numberline {4.2}{\ignorespaces COMET与RQ-VAE的推荐对比实例1}}{25}{figure.caption.23}%
+\contentsline {figure}{\numberline {4.3}{\ignorespaces COMET与RQ-VAE的推荐对比实例2}}{26}{figure.caption.24}%
+\contentsline {figure}{\numberline {4.4}{\ignorespaces 长尾物品分布}}{28}{figure.caption.26}%
+\contentsline {figure}{\numberline {4.5}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{30}{figure.caption.29}%
 \contentsfinish 
 \contentsfinish 

@@ -1,9 +1,9 @@
-\contentsline {table}{\numberline {4.1}{\ignorespaces Amazon Beauty数据集统计}}{16}{table.caption.18}%
-\contentsline {table}{\numberline {4.2}{\ignorespaces COMET超参数设置}}{17}{table.caption.19}%
-\contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{19}{table.caption.20}%
-\contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{20}{table.caption.21}%
-\contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{24}{table.caption.25}%
-\contentsline {table}{\numberline {4.6}{\ignorespaces 热门物品与长尾物品推荐性能对比（OneRec）}}{25}{table.caption.27}%
-\contentsline {table}{\numberline {4.7}{\ignorespaces 不同语义ID方法的碰撞对比}}{26}{table.caption.28}%
+\contentsline {table}{\numberline {4.1}{\ignorespaces Amazon Beauty数据集统计}}{19}{table.caption.18}%
+\contentsline {table}{\numberline {4.2}{\ignorespaces COMET超参数设置}}{20}{table.caption.19}%
+\contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{22}{table.caption.20}%
+\contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{22}{table.caption.21}%
+\contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{26}{table.caption.25}%
+\contentsline {table}{\numberline {4.6}{\ignorespaces 热门物品与长尾物品推荐性能对比（OneRec）}}{27}{table.caption.27}%
+\contentsline {table}{\numberline {4.7}{\ignorespaces 不同语义ID方法的碰撞对比}}{29}{table.caption.28}%
 \contentsfinish 
 \contentsfinish 

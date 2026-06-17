@@ -98,5 +98,13 @@
 }
 \makeatother
 
+% 调整浮动体参数，避免图片单独占据一整页
+\renewcommand{\textfraction}{0.15}       % 页面中至少15%是文本
+\renewcommand{\topfraction}{0.85}        % 页面顶部最多85%是浮动体
+\renewcommand{\bottomfraction}{0.70}     % 页面底部最多70%是浮动体
+\renewcommand{\floatpagefraction}{0.66}  % 浮动页至少要有66%被浮动体占据
+\setlength{\textfloatsep}{10pt plus 2pt minus 4pt}  % 减小图片与文字的间距
+\setlength{\intextsep}{10pt plus 2pt minus 4pt}     % 减小图文混排间距
+
 % hyperref 宏包在最后调用
 \usepackage{hyperref}

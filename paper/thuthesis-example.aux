@@ -60,99 +60,103 @@
 \@writefile{toc}{\contentsline {section}{\numberline {2.4}多模态推荐}{8}{section.2.4}\protected@file@percent }
 \pp@pagectr{footnote}{3}{18}{10}
 \@writefile{toc}{\contentsline {chapter}{\numberline {第3章}基于协同引导的多模态语义ID构建方法}{10}{chapter.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.1}问题定义}{10}{section.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.2}整体框架}{10}{section.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.1}生成式推荐的两阶段框架}{10}{section.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1.1}第一阶段：语义ID构建}{10}{subsection.3.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1.2}第二阶段：生成式推荐}{10}{subsection.3.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.2}COMET方法概述}{11}{section.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.1}问题定义}{11}{subsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.2}整体框架}{11}{subsection.3.2.2}\protected@file@percent }
 \citation{qwen3embedding}
-\@writefile{lof}{\contentsline {figure}{\numberline {3.1}{\ignorespaces COMET整体框架}}{11}{figure.caption.17}\protected@file@percent }
-\newlabel{fig:framework}{{3.1}{11}{COMET整体框架}{figure.caption.17}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {3.3}多模态嵌入提取}{11}{section.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3.1}文本嵌入}{11}{subsection.3.3.1}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3.1}{\ignorespaces COMET整体框架}}{12}{figure.caption.17}\protected@file@percent }
+\newlabel{fig:framework}{{3.1}{12}{COMET整体框架}{figure.caption.17}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.3}多模态嵌入提取}{12}{subsection.3.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3.1}文本嵌入}{12}{subsubsection.3.2.3.1}\protected@file@percent }
 \citation{radford2021learning}
 \citation{kang2018self}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3.2}图像嵌入}{12}{subsection.3.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3.3}协同过滤嵌入}{12}{subsection.3.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.4}基于协同引导的多模态融合模块}{12}{section.3.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4.1}特征对齐投影器}{12}{subsection.3.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4.2}协同引导交叉注意力网络}{13}{subsection.3.4.2}\protected@file@percent }
-\newlabel{eq:preln-attn}{{3.10}{13}{协同引导交叉注意力网络}{equation.3.10}{}}
-\newlabel{eq:preln-ffn}{{3.11}{13}{协同引导交叉注意力网络}{equation.3.11}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4.3}码本特征映射器}{13}{subsection.3.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.5}残差向量量化}{14}{section.3.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.6}损失函数设计}{14}{section.3.6}\protected@file@percent }
-\newlabel{eq:loss}{{3.13}{14}{损失函数设计}{equation.3.13}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3.2}图像嵌入}{13}{subsubsection.3.2.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.3.3}协同过滤嵌入}{13}{subsubsection.3.2.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.4}基于协同引导的多模态融合模块}{13}{subsection.3.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.4.1}特征对齐投影器}{14}{subsubsection.3.2.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.4.2}协同引导交叉注意力网络}{14}{subsubsection.3.2.4.2}\protected@file@percent }
+\newlabel{eq:preln-attn}{{3.10}{15}{协同引导交叉注意力网络}{equation.3.10}{}}
+\newlabel{eq:preln-ffn}{{3.11}{15}{协同引导交叉注意力网络}{equation.3.11}{}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.4.3}码本特征映射器}{15}{subsubsection.3.2.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.5}残差向量量化}{15}{subsection.3.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.6}损失函数设计}{16}{subsection.3.2.6}\protected@file@percent }
+\newlabel{eq:loss}{{3.13}{16}{损失函数设计}{equation.3.13}{}}
 \citation{cuturi2013sinkhorn}
-\@writefile{toc}{\contentsline {section}{\numberline {3.7}Sinkhorn碰撞优化}{15}{section.3.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3.8}本章小结}{15}{section.3.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2.7}Sinkhorn碰撞优化}{17}{subsection.3.2.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3.3}本章小结}{18}{section.3.3}\protected@file@percent }
 \citation{mcauley2015image}
 \citation{rajput2023recommender,zheng2024adapting}
-\pp@pagectr{footnote}{4}{24}{16}
-\@writefile{toc}{\contentsline {chapter}{\numberline {第4章}实验}{16}{chapter.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4.1}实验设置}{16}{section.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.1}数据集}{16}{subsection.4.1.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.1}{\ignorespaces Amazon Beauty数据集统计}}{16}{table.caption.18}\protected@file@percent }
-\newlabel{tab:dataset}{{4.1}{16}{Amazon Beauty数据集统计}{table.caption.18}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.2}评价指标}{16}{subsection.4.1.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.2}{\ignorespaces COMET超参数设置}}{17}{table.caption.19}\protected@file@percent }
-\newlabel{tab:hyperparams}{{4.2}{17}{COMET超参数设置}{table.caption.19}{}}
+\pp@pagectr{footnote}{4}{27}{19}
+\@writefile{toc}{\contentsline {chapter}{\numberline {第4章}实验}{19}{chapter.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.1}实验设置}{19}{section.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.1}数据集}{19}{subsection.4.1.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.1}{\ignorespaces Amazon Beauty数据集统计}}{19}{table.caption.18}\protected@file@percent }
+\newlabel{tab:dataset}{{4.1}{19}{Amazon Beauty数据集统计}{table.caption.18}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.2}评价指标}{19}{subsection.4.1.2}\protected@file@percent }
 \citation{onerec}
 \citation{lee2022autoregressive}
 \citation{wang2024learnable}
+\@writefile{lot}{\contentsline {table}{\numberline {4.2}{\ignorespaces COMET超参数设置}}{20}{table.caption.19}\protected@file@percent }
+\newlabel{tab:hyperparams}{{4.2}{20}{COMET超参数设置}{table.caption.19}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.3}基线方法}{20}{subsection.4.1.3}\protected@file@percent }
 \citation{rajput2023recommender}
 \citation{raffel2020exploring}
 \citation{onerec}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.3}基线方法}{18}{subsection.4.1.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.4}下游推荐模型}{18}{subsection.4.1.4}\protected@file@percent }
 \citation{onerec}
 \citation{lee2022autoregressive}
 \citation{wang2024learnable}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.4}下游推荐模型}{21}{subsection.4.1.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.5}实现细节}{21}{subsection.4.1.5}\protected@file@percent }
 \citation{onerec}
 \citation{lee2022autoregressive}
 \citation{wang2024learnable}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1.5}实现细节}{19}{subsection.4.1.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4.2}主实验结果}{19}{section.4.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{19}{table.caption.20}\protected@file@percent }
-\newlabel{tab:tiger-results}{{4.3}{19}{TIGER结合不同语义ID方法的推荐性能}{table.caption.20}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{20}{table.caption.21}\protected@file@percent }
-\newlabel{tab:onerec-results}{{4.4}{20}{OneRec结合不同语义ID方法的推荐性能}{table.caption.21}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.1}{\ignorespaces 推荐系统实例}}{21}{figure.caption.22}\protected@file@percent }
-\newlabel{fig:rec-sample}{{4.1}{21}{推荐系统实例}{figure.caption.22}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.2}{\ignorespaces COMET与RQ-VAE的推荐对比实例1}}{22}{figure.caption.23}\protected@file@percent }
-\newlabel{fig:rec-case}{{4.2}{22}{COMET与RQ-VAE的推荐对比实例1}{figure.caption.23}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.3}{\ignorespaces COMET与RQ-VAE的推荐对比实例2}}{23}{figure.caption.24}\protected@file@percent }
-\newlabel{fig:rec-case2}{{4.3}{23}{COMET与RQ-VAE的推荐对比实例2}{figure.caption.24}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.3}消融实验}{23}{section.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4.2}主实验结果}{22}{section.4.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.3}{\ignorespaces TIGER结合不同语义ID方法的推荐性能}}{22}{table.caption.20}\protected@file@percent }
+\newlabel{tab:tiger-results}{{4.3}{22}{TIGER结合不同语义ID方法的推荐性能}{table.caption.20}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4.4}{\ignorespaces OneRec结合不同语义ID方法的推荐性能}}{22}{table.caption.21}\protected@file@percent }
+\newlabel{tab:onerec-results}{{4.4}{22}{OneRec结合不同语义ID方法的推荐性能}{table.caption.21}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.1}{\ignorespaces 推荐系统实例}}{24}{figure.caption.22}\protected@file@percent }
+\newlabel{fig:rec-sample}{{4.1}{24}{推荐系统实例}{figure.caption.22}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.2}{\ignorespaces COMET与RQ-VAE的推荐对比实例1}}{25}{figure.caption.23}\protected@file@percent }
+\newlabel{fig:rec-case}{{4.2}{25}{COMET与RQ-VAE的推荐对比实例1}{figure.caption.23}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.3}消融实验}{25}{section.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4.3}{\ignorespaces COMET与RQ-VAE的推荐对比实例2}}{26}{figure.caption.24}\protected@file@percent }
+\newlabel{fig:rec-case2}{{4.3}{26}{COMET与RQ-VAE的推荐对比实例2}{figure.caption.24}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{26}{table.caption.25}\protected@file@percent }
+\newlabel{tab:ablation-modality}{{4.5}{26}{COMET关键组件的消融实验结果（OneRec）}{table.caption.25}{}}
 \citation{lee2022autoregressive}
 \citation{lee2022autoregressive}
-\@writefile{lot}{\contentsline {table}{\numberline {4.5}{\ignorespaces COMET关键组件的消融实验结果（OneRec）}}{24}{table.caption.25}\protected@file@percent }
-\newlabel{tab:ablation-modality}{{4.5}{24}{COMET关键组件的消融实验结果（OneRec）}{table.caption.25}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.4}长尾物品推荐分析}{24}{section.4.4}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {4.4}{\ignorespaces 长尾物品分布}}{25}{figure.caption.26}\protected@file@percent }
-\newlabel{fig:longtail-dist}{{4.4}{25}{长尾物品分布}{figure.caption.26}{}}
-\@writefile{lot}{\contentsline {table}{\numberline {4.6}{\ignorespaces 热门物品与长尾物品推荐性能对比（OneRec）}}{25}{table.caption.27}\protected@file@percent }
-\newlabel{tab:longtail}{{4.6}{25}{热门物品与长尾物品推荐性能对比（OneRec）}{table.caption.27}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.4}长尾物品推荐分析}{27}{section.4.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.6}{\ignorespaces 热门物品与长尾物品推荐性能对比（OneRec）}}{27}{table.caption.27}\protected@file@percent }
+\newlabel{tab:longtail}{{4.6}{27}{热门物品与长尾物品推荐性能对比（OneRec）}{table.caption.27}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.4}{\ignorespaces 长尾物品分布}}{28}{figure.caption.26}\protected@file@percent }
+\newlabel{fig:longtail-dist}{{4.4}{28}{长尾物品分布}{figure.caption.26}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.5}语义ID质量分析}{28}{section.4.5}\protected@file@percent }
 \citation{onerec}
 \citation{lee2022autoregressive}
 \citation{wang2024learnable}
-\@writefile{toc}{\contentsline {section}{\numberline {4.5}语义ID质量分析}{26}{section.4.5}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4.7}{\ignorespaces 不同语义ID方法的碰撞对比}}{26}{table.caption.28}\protected@file@percent }
-\newlabel{tab:collision}{{4.7}{26}{不同语义ID方法的碰撞对比}{table.caption.28}{}}
-\newlabel{fig:collision-case-a}{{4.5(a)}{27}{冲突率案例分析a}{figure.caption.29}{}}
-\newlabel{sub@fig:collision-case-a}{{(a)}{27}{冲突率案例分析a}{figure.caption.29}{}}
-\newlabel{fig:collision-case-b}{{4.5(b)}{27}{冲突率案例分析b}{figure.caption.29}{}}
-\newlabel{sub@fig:collision-case-b}{{(b)}{27}{冲突率案例分析b}{figure.caption.29}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {4.5}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{27}{figure.caption.29}\protected@file@percent }
-\newlabel{fig:collision-case}{{4.5}{27}{冲突率案例分析:同系列不同色号唇膏的语义ID对比}{figure.caption.29}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {4.6}本章小结}{28}{section.4.6}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4.7}{\ignorespaces 不同语义ID方法的碰撞对比}}{29}{table.caption.28}\protected@file@percent }
+\newlabel{tab:collision}{{4.7}{29}{不同语义ID方法的碰撞对比}{table.caption.28}{}}
+\newlabel{fig:collision-case-a}{{4.5(a)}{30}{冲突率案例分析a}{figure.caption.29}{}}
+\newlabel{sub@fig:collision-case-a}{{(a)}{30}{冲突率案例分析a}{figure.caption.29}{}}
+\newlabel{fig:collision-case-b}{{4.5(b)}{30}{冲突率案例分析b}{figure.caption.29}{}}
+\newlabel{sub@fig:collision-case-b}{{(b)}{30}{冲突率案例分析b}{figure.caption.29}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {4.5}{\ignorespaces 冲突率案例分析:同系列不同色号唇膏的语义ID对比}}{30}{figure.caption.29}\protected@file@percent }
+\newlabel{fig:collision-case}{{4.5}{30}{冲突率案例分析:同系列不同色号唇膏的语义ID对比}{figure.caption.29}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {4.6}本章小结}{30}{section.4.6}\protected@file@percent }
 \@input{bu.aux}
 \bibdata{ref/refs}
 \gdef\bu@bibdata{ref/refs}
-\pp@pagectr{footnote}{5}{37}{29}
-\@writefile{toc}{\contentsline {chapter}{\numberline {第5章}总结与展望}{29}{chapter.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5.1}工作总结}{29}{section.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5.2}未来展望}{29}{section.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {chapter}{参考文献}{30}{section*.30}\protected@file@percent }
+\pp@pagectr{footnote}{5}{40}{32}
+\@writefile{toc}{\contentsline {chapter}{\numberline {第5章}总结与展望}{32}{chapter.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.1}工作总结}{32}{section.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5.2}未来展望}{32}{section.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{参考文献}{33}{section*.30}\protected@file@percent }
 \ttl@writefile{toc}{\setcounter {tocdepth}{0}}
-\@writefile{toc}{\contentsline {chapter}{致谢}{32}{section*.32}\protected@file@percent }
-\@writefile{toc}{\contentsline {chapter}{声明}{33}{section*.34}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{致谢}{35}{section*.32}\protected@file@percent }
+\@writefile{toc}{\contentsline {chapter}{声明}{36}{section*.34}\protected@file@percent }
 \ttl@finishall
-\gdef \@abspage@last{41}
+\gdef \@abspage@last{44}
