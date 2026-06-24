@@ -1,19 +1,19 @@
 # Fdb version 4
-["bibtex thuthesis-example"] 1781682516.06273 "thuthesis-example.aux" "thuthesis-example.bbl" "thuthesis-example" 1781682525.6376 0
+["bibtex thuthesis-example"] 1781682516.06273 "thuthesis-example.aux" "thuthesis-example.bbl" "thuthesis-example" 1781682769.35991 0
   "./ref/refs.bib" 1781621119.34406 8708 a114e302e19893e4f729405b70cf0942 ""
   "./thuthesis-bachelor.bst" 1781621119.34459 46500 627fb9ef5c4dcc19071f4203d3ea5d7b ""
-  "bu.aux" 1781682517.47149 1899 e52bbab0892551b1846895647529ce89 "xelatex"
-  "thuthesis-example.aux" 1781682517.49096 12958 7388646b47f6bb092bcd445fcd585165 "xelatex"
+  "bu.aux" 1781682761.17585 1899 e52bbab0892551b1846895647529ce89 "xelatex"
+  "thuthesis-example.aux" 1781682761.19578 12958 7388646b47f6bb092bcd445fcd585165 "xelatex"
   (generated)
   "thuthesis-example.bbl"
   "thuthesis-example.blg"
   (rewritten before read)
-["xdvipdfmx"] 1781682517.58358 "thuthesis-example.xdv" "thuthesis-example.pdf" "thuthesis-example" 1781682525.63856 0
-  "thuthesis-example.xdv" 1781682517.49525 794688 5ca2de7b8553b462561d33f0d1b15c73 "xelatex"
+["xdvipdfmx"] 1781682761.28854 "thuthesis-example.xdv" "thuthesis-example.pdf" "thuthesis-example" 1781682769.36082 0
+  "thuthesis-example.xdv" 1781682761.19995 794688 79b6a32a5df903fffea7ff5bf66affc3 "xelatex"
   (generated)
   "thuthesis-example.pdf"
   (rewritten before read)
-["xelatex"] 1781682516.08315 "thuthesis-example.tex" "thuthesis-example.xdv" "thuthesis-example" 1781682525.63767 0
+["xelatex"] 1781682759.66022 "thuthesis-example.tex" "thuthesis-example.xdv" "thuthesis-example" 1781682769.35997 0
   "/System/Library/Fonts/Menlo.ttc" 1773984357 2156036 ec05dfca6821d85440da0899493002c3 ""
   "/usr/local/texlive/2026basic/texmf-dist/fonts/tfm/adobe/zapfding/pzdr.tfm" 1136768653 1528 f853c4d1b4e0550255e02831fdc8496f ""
   "/usr/local/texlive/2026basic/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm" 1136768653 1528 abec98dbc43e172678c11b3b9031252a ""
@@ -136,7 +136,7 @@
   "/usr/local/texlive/2026basic/texmf-dist/web2c/texmf.cnf" 1770478701 43630 e9fa012910491fe5ae08a72c3c2997a7 ""
   "/usr/local/texlive/2026basic/texmf-var/web2c/xetex/xelatex.fmt" 1781621918 5411329 191af42fe0df5d7a5c498710f592bd0d ""
   "/usr/local/texlive/2026basic/texmf.cnf" 1772405582 628 bbc09d6d38872d53c11bb48dc9b14e88 ""
-  "bu.aux" 1781682517.47149 1899 e52bbab0892551b1846895647529ce89 "xelatex"
+  "bu.aux" 1781682761.17585 1899 e52bbab0892551b1846895647529ce89 "xelatex"
   "data/abstract.tex" 1781621119.32577 3109 ddc319ec94da49068fcb3635adf5a23f ""
   "data/acknowledgements.tex" 1781621119.32583 2338 76aaf1486397da9c28af112783f7f1e6 ""
   "data/chap01.tex" 1781621119.32605 5882 71d43154878c8d63545019238a4ab00d ""
@@ -156,14 +156,14 @@
   "figures/rec_sample.png" 1781621119.34298 1187444 6cc05526e73d4d7f52f83cd1c71afd09 ""
   "thu-fig-logo.pdf" 1781621119.34418 111420 f3b86208737d945fd374eed05bb4ecb5 ""
   "thu-text-logo.pdf" 1781621119.34427 22013 d4969d3ac906504fde13592ee2a452c2 ""
-  "thusetup.tex" 1781682274.34625 2672 7885b37cfe1dc025b3db9a4a1db5636c ""
-  "thuthesis-example.aux" 1781682517.49096 12958 7388646b47f6bb092bcd445fcd585165 "xelatex"
+  "thusetup.tex" 1781682751.12798 2674 7557cf12b594b4769de86834a0877fd6 ""
+  "thuthesis-example.aux" 1781682761.19578 12958 7388646b47f6bb092bcd445fcd585165 "xelatex"
   "thuthesis-example.bbl" 1781682516.0815 6350 b13458b6def920f953a33f74f7765f7b "bibtex thuthesis-example"
-  "thuthesis-example.lof" 1781682517.49253 1094 e2b3b88dfd8746b0afff4b8d025bf891 "xelatex"
-  "thuthesis-example.lot" 1781682517.49255 877 b780fa67d07af507fbcd387fc6814b8f "xelatex"
-  "thuthesis-example.out" 1781682517.49224 7409 be7aa1aec7055158550b74bbf0b166dc "xelatex"
+  "thuthesis-example.lof" 1781682761.19739 1094 e2b3b88dfd8746b0afff4b8d025bf891 "xelatex"
+  "thuthesis-example.lot" 1781682761.1974 877 b780fa67d07af507fbcd387fc6814b8f "xelatex"
+  "thuthesis-example.out" 1781682761.19706 7409 be7aa1aec7055158550b74bbf0b166dc "xelatex"
   "thuthesis-example.tex" 1781621119.3564 1055 a42d08f3e3a90144917b78ad5f5440e5 ""
-  "thuthesis-example.toc" 1781682517.49251 4091 ea28a6273e6062bcd74ad2c165c57540 "xelatex"
+  "thuthesis-example.toc" 1781682761.19736 4091 ea28a6273e6062bcd74ad2c165c57540 "xelatex"
   "thuthesis.cls" 1781621119.35738 116146 c33f157519513ce9b096f687e1feb3fd ""
   (generated)
   "bu.aux"
